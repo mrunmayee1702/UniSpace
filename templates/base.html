@@ -166,6 +166,7 @@
   <!-- Toast Notification System -->
   <div class="toast-container" id="toastContainer"></div>
 
+  <script>window.INITIAL_VIEW = "{{ initial_view if initial_view else 'dashboard' }}";</script>
   <script src="{{ url_for('static', filename='js/unispace.js') }}?v={{ range(1, 999999) | random }}"></script>
 </body>
 </html>
