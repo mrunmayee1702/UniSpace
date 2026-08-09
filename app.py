@@ -4,9 +4,12 @@ from flask_login import LoginManager, login_user, logout_user, login_required, c
 from config import Config
 from models import (
     db, User, Folder, File, Note, Tag, Task, Subtask, CalendarEvent, TimetableEntry,
-    Bookmark, Project, Milestone, Reminder, PinnedItem
+    Bookmark, Project, Milestone, Reminder, ActivityLog, PinnedItem
 )
 from services.storage_service import storage_service
+from services.ai_service import ai_service
+from services.graph_service import graph_service
+from services.vector_service import vector_service
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -20,6 +23,15 @@ login_manager.login_view = 'login'
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(user_id)
+
+
+def log_activity(user_id, action_type, description, item_type, item_id=None):
+    try:
+        log = ActivityLog(user_id=user_id, action_type=action_type, description=description, item_type=item_type, item_id=item_id)
+        db.session.add(log)
+        db.session.commit()
+    except Exception as e:
+        print("Activity log error:", e)
 
 
 # Pre-seed realistic data for demo user ONLY
@@ -60,9 +72,10 @@ def seed_demo_data(user):
     db.session.add_all([f1, f2])
 
     db.session.commit()
+    log_activity(user.id, "created", "Initialized demo workspace profile", "workspace")
 
 
-# HTML Authentication & Dashboard Routes
+# HTML Authentication & View Routes
 @app.route('/')
 def index():
     if not current_user.is_authenticated:
@@ -81,6 +94,7 @@ def login():
         
         if user and user.check_password(password):
             login_user(user, remember=True)
+            log_activity(user.id, "authenticated", f"User logged in: {user.email}", "auth")
             return redirect(url_for('index'))
         else:
             flash('Invalid email or password.')
@@ -93,8 +107,8 @@ def register():
         return redirect(url_for('index'))
         
     if request.method == 'POST':
-        email = request.form.get('email')
-        full_name = request.form.get('full_name')
+        email = request.form.get('email', '').strip().lower()
+        full_name = request.form.get('full_name', '').strip()
         major_study = request.form.get('major_study', 'Computer Science')
         password = request.form.get('password')
 
@@ -108,6 +122,7 @@ def register():
         db.session.commit()
 
         login_user(user)
+        log_activity(user.id, "registered", f"Created new account: {user.email}", "auth")
         return redirect(url_for('index'))
 
     return render_template('register.html')
@@ -115,11 +130,47 @@ def register():
 @app.route('/logout')
 @login_required
 def logout():
+    log_activity(current_user.id, "authenticated", f"User logged out", "auth")
     logout_user()
     return redirect(url_for('login'))
 
 
-# REST JSON API Endpoints (Strict User Isolation & Full CRUD)
+# USER PROFILE & SETTINGS API
+@app.route('/api/v1/user/profile', methods=['PUT'])
+@login_required
+def update_profile():
+    data = request.json or {}
+    if 'full_name' in data: current_user.full_name = data['full_name'].strip()
+    if 'major_study' in data: current_user.major_study = data['major_study'].strip()
+    db.session.commit()
+    log_activity(current_user.id, "updated", "Updated profile settings", "user")
+    return jsonify({"success": True})
+
+@app.route('/api/v1/user/password', methods=['PUT'])
+@login_required
+def update_password():
+    data = request.json or {}
+    old_pw = data.get('old_password')
+    new_pw = data.get('new_password')
+    if not old_pw or not new_pw:
+        return jsonify({"error": "Missing old or new password"}), 400
+    if not current_user.check_password(old_pw):
+        return jsonify({"error": "Incorrect current password"}), 401
+    
+    current_user.set_password(new_pw)
+    db.session.commit()
+    log_activity(current_user.id, "updated", "Changed account password", "user")
+    return jsonify({"success": True})
+
+@app.route('/api/v1/user/account', methods=['DELETE'])
+@login_required
+def delete_account():
+    user = User.query.get(current_user.id)
+    logout_user()
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({"success": True})
+
 
 # NOTES API
 @app.route('/api/v1/notes', methods=['GET', 'POST'])
@@ -127,13 +178,27 @@ def logout():
 def handle_notes():
     if request.method == 'POST':
         data = request.json or {}
-        note = Note(user_id=current_user.id, title=data.get('title'), content=data.get('content', ''), is_starred=data.get('is_starred', False), is_pinned=data.get('is_pinned', False))
+        note = Note(
+            user_id=current_user.id,
+            folder_id=data.get('folder_id'),
+            project_id=data.get('project_id'),
+            title=data.get('title', 'Untitled Note'),
+            content=data.get('content', ''),
+            is_starred=data.get('is_starred', False),
+            is_pinned=data.get('is_pinned', False)
+        )
         db.session.add(note)
         db.session.commit()
+        log_activity(current_user.id, "created", f"Created note '{note.title}'", "note", note.id)
         return jsonify({"id": note.id, "title": note.title}), 201
     
-    notes = Note.query.filter_by(user_id=current_user.id).order_by(Note.created_at.desc()).all()
-    return jsonify([{"id": n.id, "title": n.title, "content": n.content, "is_starred": n.is_starred, "is_pinned": n.is_pinned} for n in notes])
+    notes = Note.query.filter_by(user_id=current_user.id).order_by(Note.is_pinned.desc(), Note.updated_at.desc()).all()
+    return jsonify([{
+        "id": n.id, "title": n.title, "content": n.content,
+        "is_starred": n.is_starred, "is_pinned": n.is_pinned,
+        "folder_id": n.folder_id, "project_id": n.project_id,
+        "updated_at": n.updated_at.isoformat() if n.updated_at else ''
+    } for n in notes])
 
 @app.route('/api/v1/notes/<note_id>', methods=['PUT', 'DELETE'])
 @login_required
@@ -142,6 +207,7 @@ def single_note(note_id):
     if request.method == 'DELETE':
         db.session.delete(note)
         db.session.commit()
+        log_activity(current_user.id, "deleted", f"Deleted note '{note.title}'", "note", note_id)
         return jsonify({"success": True}), 200
     
     data = request.json or {}
@@ -149,42 +215,58 @@ def single_note(note_id):
     if 'content' in data: note.content = data['content']
     if 'is_starred' in data: note.is_starred = data['is_starred']
     if 'is_pinned' in data: note.is_pinned = data['is_pinned']
+    if 'project_id' in data: note.project_id = data['project_id']
     db.session.commit()
+    log_activity(current_user.id, "updated", f"Updated note '{note.title}'", "note", note.id)
     return jsonify({"success": True})
 
 
-# FOLDERS API
+# FOLDERS API (Nested Hierarchy Support)
 @app.route('/api/v1/folders', methods=['GET', 'POST'])
 @login_required
 def handle_folders():
     if request.method == 'POST':
         data = request.json or {}
-        folder = Folder(user_id=current_user.id, name=data.get('name'), color=data.get('color', '#00F5A0'))
+        parent_id = data.get('parent_id')
+        if parent_id in ['', 'null', 'undefined']: parent_id = None
+        folder = Folder(user_id=current_user.id, parent_id=parent_id, name=data.get('name'), color=data.get('color', '#00F5A0'))
         db.session.add(folder)
         db.session.commit()
-        return jsonify({"id": folder.id, "name": folder.name}), 201
+        log_activity(current_user.id, "created", f"Created folder '{folder.name}'", "folder", folder.id)
+        return jsonify({"id": folder.id, "name": folder.name, "parent_id": folder.parent_id}), 201
 
-    folders = Folder.query.filter_by(user_id=current_user.id).all()
-    return jsonify([{"id": f.id, "name": f.name, "color": f.color} for f in folders])
+    parent_id = request.args.get('parent_id')
+    if parent_id == 'root' or parent_id == '':
+        folders = Folder.query.filter(Folder.user_id == current_user.id, Folder.parent_id == None).all()
+    elif parent_id:
+        folders = Folder.query.filter_by(user_id=current_user.id, parent_id=parent_id).all()
+    else:
+        folders = Folder.query.filter_by(user_id=current_user.id).all()
+
+    return jsonify([{"id": f.id, "name": f.name, "color": f.color, "parent_id": f.parent_id} for f in folders])
 
 @app.route('/api/v1/folders/<folder_id>', methods=['PUT', 'DELETE'])
 @login_required
 def single_folder(folder_id):
     folder = Folder.query.filter_by(id=folder_id, user_id=current_user.id).first_or_404()
     if request.method == 'DELETE':
-        # Safely detach files to root directory
+        # Safely detach subfiles & subfolders to root directory
         File.query.filter_by(folder_id=folder.id, user_id=current_user.id).update({"folder_id": None})
+        Folder.query.filter_by(parent_id=folder.id, user_id=current_user.id).update({"parent_id": None})
         db.session.delete(folder)
         db.session.commit()
+        log_activity(current_user.id, "deleted", f"Deleted folder '{folder.name}'", "folder", folder_id)
         return jsonify({"success": True}), 200
     
     data = request.json or {}
     if 'name' in data: folder.name = data['name']
+    if 'parent_id' in data: folder.parent_id = data['parent_id']
     db.session.commit()
+    log_activity(current_user.id, "updated", f"Renamed folder '{folder.name}'", "folder", folder.id)
     return jsonify({"success": True})
 
 
-# FILES API (Upload, Rename, Preview, Download, Move, Delete)
+# FILES API (Upload, Preview, Download, Move, Sort, Search)
 @app.route('/api/v1/files', methods=['GET', 'POST'])
 @login_required
 def handle_files():
@@ -193,15 +275,41 @@ def handle_files():
             return jsonify({"error": "No file uploaded"}), 400
         file = request.files['file']
         folder_id = request.form.get('folder_id')
+        project_id = request.form.get('project_id')
         if folder_id in ['', 'null', 'undefined']: folder_id = None
+        if project_id in ['', 'null', 'undefined']: project_id = None
+
         dest_path, filename, size, ext = storage_service.save_file(file)
-        db_file = File(user_id=current_user.id, folder_id=folder_id, file_name=filename, file_path=dest_path, file_size=size, mime_type=file.content_type or 'application/octet-stream', file_extension=ext)
+        db_file = File(user_id=current_user.id, folder_id=folder_id, project_id=project_id, file_name=filename, file_path=dest_path, file_size=size, mime_type=file.content_type or 'application/octet-stream', file_extension=ext)
         db.session.add(db_file)
         db.session.commit()
+        log_activity(current_user.id, "uploaded", f"Uploaded file '{filename}'", "file", db_file.id)
         return jsonify({"id": db_file.id, "file_name": db_file.file_name, "folder_id": db_file.folder_id}), 201
 
-    files = File.query.filter_by(user_id=current_user.id).order_by(File.created_at.desc()).all()
-    return jsonify([{"id": f.id, "file_name": f.file_name, "file_size": f.file_size, "file_extension": f.file_extension, "mime_type": f.mime_type, "folder_id": f.folder_id} for f in files])
+    query = File.query.filter_by(user_id=current_user.id)
+    folder_id = request.args.get('folder_id')
+    sort_by = request.args.get('sort_by', 'date')
+    search_q = request.args.get('search', '').strip()
+
+    if folder_id == 'root':
+        query = query.filter(File.folder_id == None)
+    elif folder_id:
+        query = query.filter(File.folder_id == folder_id)
+
+    if search_q:
+        query = query.filter(File.file_name.ilike(f"%{search_q}%"))
+
+    if sort_by == 'name':
+        query = query.order_by(File.file_name.asc())
+    elif sort_by == 'size':
+        query = query.order_by(File.file_size.desc())
+    elif sort_by == 'type':
+        query = query.order_by(File.file_extension.asc())
+    else:
+        query = query.order_by(File.created_at.desc())
+
+    files = query.all()
+    return jsonify([{"id": f.id, "file_name": f.file_name, "file_size": f.file_size, "file_extension": f.file_extension, "mime_type": f.mime_type, "folder_id": f.folder_id, "project_id": f.project_id, "is_starred": f.is_starred} for f in files])
 
 @app.route('/api/v1/files/<file_id>', methods=['PUT', 'DELETE'])
 @login_required
@@ -212,12 +320,12 @@ def single_file(file_id):
             os.remove(file_obj.file_path)
         db.session.delete(file_obj)
         db.session.commit()
+        log_activity(current_user.id, "deleted", f"Deleted file '{file_obj.file_name}'", "file", file_id)
         return jsonify({"success": True}), 200
 
     data = request.json or {}
     if 'file_name' in data:
         new_name = data['file_name'].strip()
-        # Preserve original file extension if missing from new name
         ext_suffix = f".{file_obj.file_extension}"
         if not new_name.lower().endswith(ext_suffix.lower()):
             new_name = f"{new_name}{ext_suffix}"
@@ -228,7 +336,11 @@ def single_file(file_id):
         if target_folder in ['', 'null', 'undefined']: target_folder = None
         file_obj.folder_id = target_folder
 
+    if 'is_starred' in data:
+        file_obj.is_starred = data['is_starred']
+
     db.session.commit()
+    log_activity(current_user.id, "updated", f"Updated file '{file_obj.file_name}'", "file", file_obj.id)
     return jsonify({"success": True})
 
 @app.route('/api/v1/files/<file_id>/content')
@@ -254,19 +366,34 @@ def file_download(file_id):
     )
 
 
-# TASKS API
+# TASKS & SUBTASKS API
 @app.route('/api/v1/tasks', methods=['GET', 'POST'])
 @login_required
 def handle_tasks():
     if request.method == 'POST':
         data = request.json or {}
-        task = Task(user_id=current_user.id, title=data.get('title'), priority=data.get('priority', 'medium'), status=data.get('status', 'todo'), due_date=data.get('due_date'))
+        task = Task(
+            user_id=current_user.id,
+            project_id=data.get('project_id'),
+            title=data.get('title'),
+            description=data.get('description'),
+            priority=data.get('priority', 'medium'),
+            status=data.get('status', 'todo'),
+            due_date=data.get('due_date'),
+            category=data.get('category', 'General')
+        )
         db.session.add(task)
         db.session.commit()
+        log_activity(current_user.id, "created", f"Created task '{task.title}'", "task", task.id)
         return jsonify({"id": task.id, "title": task.title}), 201
 
     tasks = Task.query.filter_by(user_id=current_user.id).order_by(Task.created_at.desc()).all()
-    return jsonify([{"id": t.id, "title": t.title, "priority": t.priority, "status": t.status, "due_date": t.due_date} for t in tasks])
+    return jsonify([{
+        "id": t.id, "title": t.title, "description": t.description,
+        "priority": t.priority, "status": t.status, "progress": t.progress,
+        "due_date": t.due_date, "category": t.category, "project_id": t.project_id,
+        "subtasks": [{"id": s.id, "title": s.title, "is_completed": s.is_completed} for s in t.subtasks]
+    } for t in tasks])
 
 @app.route('/api/v1/tasks/<task_id>', methods=['PUT', 'DELETE'])
 @login_required
@@ -275,13 +402,42 @@ def single_task(task_id):
     if request.method == 'DELETE':
         db.session.delete(task)
         db.session.commit()
+        log_activity(current_user.id, "deleted", f"Deleted task '{task.title}'", "task", task_id)
         return jsonify({"success": True}), 200
     
     data = request.json or {}
     if 'title' in data: task.title = data['title']
+    if 'description' in data: task.description = data['description']
     if 'priority' in data: task.priority = data['priority']
     if 'status' in data: task.status = data['status']
+    if 'progress' in data: task.progress = data['progress']
     if 'due_date' in data: task.due_date = data['due_date']
+    if 'project_id' in data: task.project_id = data['project_id']
+    db.session.commit()
+    log_activity(current_user.id, "updated", f"Updated task '{task.title}' status to {task.status}", "task", task.id)
+    return jsonify({"success": True})
+
+@app.route('/api/v1/tasks/<task_id>/subtasks', methods=['POST'])
+@login_required
+def add_subtask(task_id):
+    task = Task.query.filter_by(id=task_id, user_id=current_user.id).first_or_404()
+    data = request.json or {}
+    subtask = Subtask(task_id=task.id, title=data.get('title'))
+    db.session.add(subtask)
+    db.session.commit()
+    return jsonify({"id": subtask.id, "title": subtask.title}), 201
+
+@app.route('/api/v1/subtasks/<subtask_id>', methods=['PUT', 'DELETE'])
+@login_required
+def single_subtask(subtask_id):
+    subtask = Subtask.query.get_or_404(subtask_id)
+    if request.method == 'DELETE':
+        db.session.delete(subtask)
+        db.session.commit()
+        return jsonify({"success": True})
+    
+    data = request.json or {}
+    if 'is_completed' in data: subtask.is_completed = data['is_completed']
     db.session.commit()
     return jsonify({"success": True})
 
@@ -292,13 +448,23 @@ def single_task(task_id):
 def handle_timetable():
     if request.method == 'POST':
         data = request.json or {}
-        entry = TimetableEntry(user_id=current_user.id, subject=data.get('subject'), day_of_week=data.get('day_of_week'), start_time=data.get('start_time'), end_time=data.get('end_time'), room=data.get('room'), instructor=data.get('instructor'))
+        entry = TimetableEntry(
+            user_id=current_user.id,
+            subject=data.get('subject'),
+            day_of_week=data.get('day_of_week'),
+            start_time=data.get('start_time'),
+            end_time=data.get('end_time'),
+            room=data.get('room'),
+            instructor=data.get('instructor'),
+            color=data.get('color', '#00F5A0')
+        )
         db.session.add(entry)
         db.session.commit()
+        log_activity(current_user.id, "created", f"Scheduled lecture '{entry.subject}'", "timetable", entry.id)
         return jsonify({"id": entry.id, "subject": entry.subject}), 201
 
     timetable = TimetableEntry.query.filter_by(user_id=current_user.id).all()
-    return jsonify([{"id": t.id, "subject": t.subject, "day_of_week": t.day_of_week, "start_time": t.start_time, "end_time": t.end_time, "room": t.room, "instructor": t.instructor} for t in timetable])
+    return jsonify([{"id": t.id, "subject": t.subject, "day_of_week": t.day_of_week, "start_time": t.start_time, "end_time": t.end_time, "room": t.room, "instructor": t.instructor, "color": t.color} for t in timetable])
 
 @app.route('/api/v1/timetable/<entry_id>', methods=['DELETE'])
 @login_required
@@ -306,6 +472,7 @@ def single_timetable(entry_id):
     entry = TimetableEntry.query.filter_by(id=entry_id, user_id=current_user.id).first_or_404()
     db.session.delete(entry)
     db.session.commit()
+    log_activity(current_user.id, "deleted", f"Removed lecture '{entry.subject}'", "timetable", entry_id)
     return jsonify({"success": True})
 
 
@@ -315,20 +482,63 @@ def single_timetable(entry_id):
 def handle_projects():
     if request.method == 'POST':
         data = request.json or {}
-        project = Project(user_id=current_user.id, name=data.get('name'), description=data.get('description'), deadline=data.get('deadline'))
+        project = Project(
+            user_id=current_user.id,
+            name=data.get('name'),
+            description=data.get('description'),
+            status=data.get('status', 'in_progress'),
+            priority=data.get('priority', 'medium'),
+            start_date=data.get('start_date'),
+            deadline=data.get('deadline'),
+            progress=data.get('progress', 0)
+        )
         db.session.add(project)
         db.session.commit()
+        log_activity(current_user.id, "created", f"Launched project '{project.name}'", "project", project.id)
         return jsonify({"id": project.id, "name": project.name}), 201
 
-    projects = Project.query.filter_by(user_id=current_user.id).all()
-    return jsonify([{"id": p.id, "name": p.name, "description": p.description, "status": p.status, "deadline": p.deadline} for p in projects])
+    projects = Project.query.filter_by(user_id=current_user.id).order_by(Project.created_at.desc()).all()
+    return jsonify([{
+        "id": p.id, "name": p.name, "description": p.description,
+        "status": p.status, "priority": p.priority, "deadline": p.deadline,
+        "progress": p.progress, "task_count": len(p.tasks)
+    } for p in projects])
 
-@app.route('/api/v1/projects/<project_id>', methods=['DELETE'])
+@app.route('/api/v1/projects/<project_id>/details')
+@login_required
+def project_details(project_id):
+    project = Project.query.filter_by(id=project_id, user_id=current_user.id).first_or_404()
+    tasks = Task.query.filter_by(project_id=project.id, user_id=current_user.id).all()
+    notes = Note.query.filter_by(project_id=project.id, user_id=current_user.id).all()
+    files = File.query.filter_by(project_id=project.id, user_id=current_user.id).all()
+    bookmarks = Bookmark.query.filter_by(project_id=project.id, user_id=current_user.id).all()
+
+    return jsonify({
+        "project": {"id": project.id, "name": project.name, "description": project.description, "status": project.status, "deadline": project.deadline, "progress": project.progress},
+        "tasks": [{"id": t.id, "title": t.title, "status": t.status, "priority": t.priority} for t in tasks],
+        "notes": [{"id": n.id, "title": n.title} for n in notes],
+        "files": [{"id": f.id, "file_name": f.file_name, "file_extension": f.file_extension} for f in files],
+        "bookmarks": [{"id": b.id, "title": b.title, "url": b.url} for b in bookmarks]
+    })
+
+@app.route('/api/v1/projects/<project_id>', methods=['PUT', 'DELETE'])
 @login_required
 def single_project(project_id):
     project = Project.query.filter_by(id=project_id, user_id=current_user.id).first_or_404()
-    db.session.delete(project)
+    if request.method == 'DELETE':
+        db.session.delete(project)
+        db.session.commit()
+        log_activity(current_user.id, "deleted", f"Deleted project '{project.name}'", "project", project_id)
+        return jsonify({"success": True}), 200
+
+    data = request.json or {}
+    if 'name' in data: project.name = data['name']
+    if 'description' in data: project.description = data['description']
+    if 'status' in data: project.status = data['status']
+    if 'progress' in data: project.progress = data['progress']
+    if 'deadline' in data: project.deadline = data['deadline']
     db.session.commit()
+    log_activity(current_user.id, "updated", f"Updated project '{project.name}'", "project", project.id)
     return jsonify({"success": True})
 
 
@@ -338,13 +548,21 @@ def single_project(project_id):
 def handle_bookmarks():
     if request.method == 'POST':
         data = request.json or {}
-        b = Bookmark(user_id=current_user.id, title=data.get('title'), url=data.get('url'), category=data.get('category', 'General'))
+        b = Bookmark(
+            user_id=current_user.id,
+            project_id=data.get('project_id'),
+            title=data.get('title'),
+            url=data.get('url'),
+            description=data.get('description'),
+            category=data.get('category', 'General')
+        )
         db.session.add(b)
         db.session.commit()
+        log_activity(current_user.id, "created", f"Saved bookmark '{b.title}'", "bookmark", b.id)
         return jsonify({"id": b.id, "title": b.title}), 201
 
     bookmarks = Bookmark.query.filter_by(user_id=current_user.id).all()
-    return jsonify([{"id": b.id, "title": b.title, "url": b.url, "category": b.category} for b in bookmarks])
+    return jsonify([{"id": b.id, "title": b.title, "url": b.url, "category": b.category, "project_id": b.project_id} for b in bookmarks])
 
 @app.route('/api/v1/bookmarks/<bookmark_id>', methods=['DELETE'])
 @login_required
@@ -352,6 +570,7 @@ def single_bookmark(bookmark_id):
     bm = Bookmark.query.filter_by(id=bookmark_id, user_id=current_user.id).first_or_404()
     db.session.delete(bm)
     db.session.commit()
+    log_activity(current_user.id, "deleted", f"Deleted bookmark '{bm.title}'", "bookmark", bookmark_id)
     return jsonify({"success": True})
 
 
@@ -361,13 +580,25 @@ def single_bookmark(bookmark_id):
 def handle_calendar():
     if request.method == 'POST':
         data = request.json or {}
-        event = CalendarEvent(user_id=current_user.id, title=data.get('title'), start_time=data.get('start_time'), end_time=data.get('end_time'), location=data.get('location'))
+        event = CalendarEvent(
+            user_id=current_user.id,
+            project_id=data.get('project_id'),
+            task_id=data.get('task_id'),
+            title=data.get('title'),
+            description=data.get('description'),
+            event_type=data.get('event_type', 'event'),
+            start_time=data.get('start_time'),
+            end_time=data.get('end_time'),
+            location=data.get('location'),
+            color=data.get('color', '#00D2FF')
+        )
         db.session.add(event)
         db.session.commit()
+        log_activity(current_user.id, "created", f"Created event '{event.title}'", "event", event.id)
         return jsonify({"id": event.id, "title": event.title}), 201
 
     events = CalendarEvent.query.filter_by(user_id=current_user.id).all()
-    return jsonify([{"id": e.id, "title": e.title, "start_time": e.start_time, "end_time": e.end_time, "location": e.location} for e in events])
+    return jsonify([{"id": e.id, "title": e.title, "start_time": e.start_time, "end_time": e.end_time, "location": e.location, "color": e.color, "event_type": e.event_type} for e in events])
 
 @app.route('/api/v1/calendar/<event_id>', methods=['DELETE'])
 @login_required
@@ -375,6 +606,7 @@ def single_calendar_event(event_id):
     ev = CalendarEvent.query.filter_by(id=event_id, user_id=current_user.id).first_or_404()
     db.session.delete(ev)
     db.session.commit()
+    log_activity(current_user.id, "deleted", f"Removed event '{ev.title}'", "event", event_id)
     return jsonify({"success": True})
 
 
@@ -384,24 +616,46 @@ def single_calendar_event(event_id):
 def handle_reminders():
     if request.method == 'POST':
         data = request.json or {}
-        rem = Reminder(user_id=current_user.id, title=data.get('title'), remind_at=data.get('remind_at'))
+        rem = Reminder(
+            user_id=current_user.id,
+            title=data.get('title'),
+            description=data.get('description'),
+            remind_at=data.get('remind_at'),
+            priority=data.get('priority', 'medium')
+        )
         db.session.add(rem)
         db.session.commit()
+        log_activity(current_user.id, "created", f"Created reminder '{rem.title}'", "reminder", rem.id)
         return jsonify({"id": rem.id, "title": rem.title}), 201
 
-    reminders = Reminder.query.filter_by(user_id=current_user.id).all()
-    return jsonify([{"id": r.id, "title": r.title, "remind_at": r.remind_at, "is_completed": r.is_completed} for r in reminders])
+    reminders = Reminder.query.filter_by(user_id=current_user.id).order_by(Reminder.created_at.desc()).all()
+    return jsonify([{"id": r.id, "title": r.title, "remind_at": r.remind_at, "is_completed": r.is_completed, "priority": r.priority} for r in reminders])
 
-@app.route('/api/v1/reminders/<reminder_id>', methods=['DELETE'])
+@app.route('/api/v1/reminders/<reminder_id>', methods=['PUT', 'DELETE'])
 @login_required
 def single_reminder(reminder_id):
     rem = Reminder.query.filter_by(id=reminder_id, user_id=current_user.id).first_or_404()
-    db.session.delete(rem)
+    if request.method == 'DELETE':
+        db.session.delete(rem)
+        db.session.commit()
+        log_activity(current_user.id, "deleted", f"Deleted reminder '{rem.title}'", "reminder", reminder_id)
+        return jsonify({"success": True}), 200
+
+    data = request.json or {}
+    if 'is_completed' in data: rem.is_completed = data['is_completed']
     db.session.commit()
     return jsonify({"success": True})
 
 
-# SEARCH API
+# ACTIVITY LOGS STREAM API
+@app.route('/api/v1/activity')
+@login_required
+def handle_activity():
+    logs = ActivityLog.query.filter_by(user_id=current_user.id).order_by(ActivityLog.created_at.desc()).limit(15).all()
+    return jsonify([{"id": l.id, "action_type": l.action_type, "description": l.description, "item_type": l.item_type, "created_at": l.created_at.strftime("%b %d, %H:%M")} for l in logs])
+
+
+# GLOBAL SEARCH API across ALL 8 MODULES
 @app.route('/api/v1/search')
 @login_required
 def handle_search():
@@ -409,18 +663,51 @@ def handle_search():
     if not q:
         return jsonify({"results": {}})
     query_str = f"%{q}%"
+
     notes = Note.query.filter(Note.user_id == current_user.id, Note.title.ilike(query_str)).limit(5).all()
     tasks = Task.query.filter(Task.user_id == current_user.id, Task.title.ilike(query_str)).limit(5).all()
     files = File.query.filter(File.user_id == current_user.id, File.file_name.ilike(query_str)).limit(5).all()
     projects = Project.query.filter(Project.user_id == current_user.id, Project.name.ilike(query_str)).limit(5).all()
+    bookmarks = Bookmark.query.filter(Bookmark.user_id == current_user.id, Bookmark.title.ilike(query_str)).limit(5).all()
+    events = CalendarEvent.query.filter(CalendarEvent.user_id == current_user.id, CalendarEvent.title.ilike(query_str)).limit(5).all()
+    timetable = TimetableEntry.query.filter(TimetableEntry.user_id == current_user.id, TimetableEntry.subject.ilike(query_str)).limit(5).all()
+    reminders = Reminder.query.filter(Reminder.user_id == current_user.id, Reminder.title.ilike(query_str)).limit(5).all()
+
     return jsonify({
         "results": {
             "notes": [{"id": n.id, "title": n.title} for n in notes],
             "tasks": [{"id": t.id, "title": t.title} for t in tasks],
             "files": [{"id": f.id, "title": f.file_name} for f in files],
-            "projects": [{"id": p.id, "title": p.name} for p in projects]
+            "projects": [{"id": p.id, "title": p.name} for p in projects],
+            "bookmarks": [{"id": b.id, "title": b.title} for b in bookmarks],
+            "events": [{"id": e.id, "title": e.title} for e in events],
+            "timetable": [{"id": t.id, "title": t.subject} for t in timetable],
+            "reminders": [{"id": r.id, "title": r.title} for r in reminders]
         }
     })
+
+
+# KNOWLEDGE GRAPH & AI PREPARATION ENDPOINTS
+@app.route('/api/v1/graph')
+@login_required
+def handle_graph():
+    notes = Note.query.filter_by(user_id=current_user.id).all()
+    files = File.query.filter_by(user_id=current_user.id).all()
+    tasks = Task.query.filter_by(user_id=current_user.id).all()
+    projects = Project.query.filter_by(user_id=current_user.id).all()
+    bookmarks = Bookmark.query.filter_by(user_id=current_user.id).all()
+    graph_data = graph_service.build_user_graph(current_user.id, notes, files, tasks, projects, bookmarks)
+    return jsonify(graph_data)
+
+@app.route('/api/v1/ai/ask', methods=['POST'])
+@login_required
+def handle_ai_ask():
+    data = request.json or {}
+    query = data.get('query', '')
+    notes = Note.query.filter_by(user_id=current_user.id).all()
+    context_docs = [{"title": n.title, "content": n.content} for n in notes]
+    res = ai_service.ask_unispace(current_user.id, query, context_docs)
+    return jsonify(res)
 
 
 # Initialize DB on start

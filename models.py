@@ -31,11 +31,6 @@ bookmark_tags = db.Table('bookmark_tags',
     db.Column('tag_id', db.String(36), db.ForeignKey('tags.id', ondelete='CASCADE'), primary_key=True)
 )
 
-project_tags = db.Table('project_tags',
-    db.Column('project_id', db.String(36), db.ForeignKey('projects.id', ondelete='CASCADE'), primary_key=True),
-    db.Column('tag_id', db.String(36), db.ForeignKey('tags.id', ondelete='CASCADE'), primary_key=True)
-)
-
 
 class User(UserMixin, db.Model):
     __tablename__ = 'users'
@@ -46,6 +41,7 @@ class User(UserMixin, db.Model):
     full_name = db.Column(db.String(100), nullable=False)
     avatar_url = db.Column(db.String(500), nullable=True)
     major_study = db.Column(db.String(100), nullable=True, default='Computer Science')
+    theme_preference = db.Column(db.String(50), default='cyber-dark')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password):
@@ -62,9 +58,12 @@ class Folder(db.Model):
     user_id = db.Column(db.String(36), db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     parent_id = db.Column(db.String(36), db.ForeignKey('folders.id', ondelete='CASCADE'), nullable=True)
     name = db.Column(db.String(255), nullable=False)
-    color = db.Column(db.String(50), default='#8B5CF6')
+    color = db.Column(db.String(50), default='#00F5A0')
     is_starred = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationship for nested folders
+    subfolders = db.relationship('Folder', backref=db.backref('parent', remote_side=[id]), cascade='all, delete-orphan')
 
 
 class File(db.Model):
@@ -73,6 +72,8 @@ class File(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
     user_id = db.Column(db.String(36), db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     folder_id = db.Column(db.String(36), db.ForeignKey('folders.id', ondelete='SET NULL'), nullable=True)
+    project_id = db.Column(db.String(36), db.ForeignKey('projects.id', ondelete='SET NULL'), nullable=True)
+    note_id = db.Column(db.String(36), db.ForeignKey('notes.id', ondelete='SET NULL'), nullable=True)
     file_name = db.Column(db.String(255), nullable=False)
     file_path = db.Column(db.String(500), nullable=False)
     file_size = db.Column(db.BigInteger, nullable=False)
@@ -88,12 +89,15 @@ class Note(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
     user_id = db.Column(db.String(36), db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     folder_id = db.Column(db.String(36), db.ForeignKey('folders.id', ondelete='SET NULL'), nullable=True)
+    project_id = db.Column(db.String(36), db.ForeignKey('projects.id', ondelete='SET NULL'), nullable=True)
     title = db.Column(db.String(255), nullable=False)
     content = db.Column(db.Text, nullable=False, default='')
     is_pinned = db.Column(db.Boolean, default=False)
     is_starred = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tags = db.relationship('Tag', secondary=note_tags, backref=db.backref('notes', lazy='dynamic'))
 
 
 class Tag(db.Model):
@@ -102,7 +106,7 @@ class Tag(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
     user_id = db.Column(db.String(36), db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     name = db.Column(db.String(50), nullable=False)
-    color = db.Column(db.String(20), default='#06B6D4')
+    color = db.Column(db.String(20), default='#00D2FF')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -116,6 +120,7 @@ class Task(db.Model):
     description = db.Column(db.Text, nullable=True)
     priority = db.Column(db.String(20), default='medium')  # urgent, high, medium, low
     status = db.Column(db.String(20), default='todo')      # todo, in_progress, done
+    progress = db.Column(db.Integer, default=0)
     due_date = db.Column(db.String(50), nullable=True)
     category = db.Column(db.String(50), default='General')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -137,12 +142,16 @@ class CalendarEvent(db.Model):
 
     id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
     user_id = db.Column(db.String(36), db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    project_id = db.Column(db.String(36), db.ForeignKey('projects.id', ondelete='SET NULL'), nullable=True)
+    task_id = db.Column(db.String(36), db.ForeignKey('tasks.id', ondelete='SET NULL'), nullable=True)
     title = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)
     event_type = db.Column(db.String(50), default='event')  # exam, deadline, meeting, class, personal
+    event_date = db.Column(db.String(50), nullable=True)
     start_time = db.Column(db.String(50), nullable=False)
-    end_time = db.Column(db.String(50), nullable=False)
-    color = db.Column(db.String(20), default='#6366F1')
+    end_time = db.Column(db.String(50), nullable=True)
+    location = db.Column(db.String(255), nullable=True)
+    color = db.Column(db.String(20), default='#00D2FF')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -156,8 +165,8 @@ class TimetableEntry(db.Model):
     room = db.Column(db.String(50), nullable=True)
     day_of_week = db.Column(db.String(20), nullable=False)  # Monday, Tuesday, etc.
     start_time = db.Column(db.String(20), nullable=False)
-    end_time = db.Column(db.String(20), nullable=False)
-    color = db.Column(db.String(20), default='#8B5CF6')
+    end_time = db.Column(db.String(20), nullable=True)
+    color = db.Column(db.String(20), default='#00F5A0')
 
 
 class Bookmark(db.Model):
@@ -165,6 +174,7 @@ class Bookmark(db.Model):
 
     id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
     user_id = db.Column(db.String(36), db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    project_id = db.Column(db.String(36), db.ForeignKey('projects.id', ondelete='SET NULL'), nullable=True)
     title = db.Column(db.String(255), nullable=False)
     url = db.Column(db.String(1000), nullable=False)
     description = db.Column(db.Text, nullable=True)
@@ -181,11 +191,14 @@ class Project(db.Model):
     name = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)
     status = db.Column(db.String(50), default='in_progress')  # planning, in_progress, completed, paused
+    priority = db.Column(db.String(20), default='medium')
     start_date = db.Column(db.String(50), nullable=True)
     deadline = db.Column(db.String(50), nullable=True)
+    progress = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     milestones = db.relationship('Milestone', backref='project', cascade='all, delete-orphan', lazy=True)
+    tasks = db.relationship('Task', backref='project', cascade='all, delete-orphan', lazy=True)
 
 
 class Milestone(db.Model):
@@ -204,9 +217,24 @@ class Reminder(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
     user_id = db.Column(db.String(36), db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     title = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text, nullable=True)
     remind_at = db.Column(db.String(50), nullable=False)
+    priority = db.Column(db.String(20), default='medium')
     is_completed = db.Column(db.Boolean, default=False)
     recurrence = db.Column(db.String(50), default='none')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ActivityLog(db.Model):
+    __tablename__ = 'activity_logs'
+
+    id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
+    user_id = db.Column(db.String(36), db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    action_type = db.Column(db.String(50), nullable=False)  # created, updated, deleted, completed
+    description = db.Column(db.String(500), nullable=False)
+    item_type = db.Column(db.String(50), nullable=False)    # note, file, task, project, event, etc.
+    item_id = db.Column(db.String(36), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class PinnedItem(db.Model):

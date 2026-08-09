@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>UniSpace — Personal Digital Workspace</title>
+  <title>UniSpace — Personal Digital Universe</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -111,18 +111,18 @@
   <div class="modal-overlay" id="searchModal">
     <div class="glass-panel-modal" style="max-width: 680px;">
       <div class="modal-header" style="margin-bottom: 16px;">
-        <input type="text" id="searchInput" placeholder="Search notes, files, tasks, projects..." style="width: 100%; background: transparent; border: none; font-size: 1.15rem; color: #FFF; outline: none; font-family: var(--font-display);" />
+        <input type="text" id="searchInput" placeholder="Search notes, files, tasks, projects, bookmarks..." style="width: 100%; background: transparent; border: none; font-size: 1.15rem; color: #FFF; outline: none; font-family: var(--font-display);" />
         <button class="modal-close" id="closeSearchModal">&times;</button>
       </div>
       <div id="searchResults" style="max-height: 420px; overflow-y: auto;">
-        <p style="color: var(--text-muted); font-size: 0.9rem; padding: 24px 0; text-align: center;">Start typing to search notes, tasks, files, projects...</p>
+        <p style="color: var(--text-muted); font-size: 0.9rem; padding: 24px 0; text-align: center;">Start typing to search notes, tasks, files, projects, bookmarks, events...</p>
       </div>
     </div>
   </div>
 
   <!-- In-App File Preview Modal -->
   <div class="modal-overlay" id="filePreviewModal">
-    <div class="glass-panel-modal" style="max-width: 820px; width: 95%; max-height: 90vh; display: flex; flex-direction: column;">
+    <div class="glass-panel-modal" style="max-width: 840px; width: 95%; max-height: 90vh; display: flex; flex-direction: column;">
       <div class="modal-header" style="margin-bottom: 16px; border-bottom: 1px solid var(--border-glass); padding-bottom: 12px;">
         <div style="display: flex; align-items: center; gap: 12px;">
           <span class="badge-tag" id="previewFileExt">PDF</span>
@@ -141,6 +141,23 @@
           <a class="btn-quick-add" id="btnDownloadFile" href="#" target="_blank" download>⬇️ Download</a>
           <button class="btn-quick-add" style="background: rgba(255, 46, 147, 0.15); color: var(--neon-rose); border: 1px solid var(--neon-rose); box-shadow: none;" id="btnDeleteFile">🗑️ Delete</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Project Details Modal Hub -->
+  <div class="modal-overlay" id="projectDetailsModal">
+    <div class="glass-panel-modal" style="max-width: 880px; width: 95%; max-height: 90vh; overflow-y: auto;">
+      <div class="modal-header" style="border-bottom: 1px solid var(--border-glass); padding-bottom: 14px; margin-bottom: 16px;">
+        <div>
+          <span class="badge-tag" id="projModalStatus">IN PROGRESS</span>
+          <h2 id="projModalName" style="color: #FFF; font-family: var(--font-heading); font-size: 1.5rem; margin-top: 6px;">Project Title</h2>
+          <p id="projModalDesc" style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 2px;">Project Description</p>
+        </div>
+        <button class="modal-close" id="closeProjectModal">&times;</button>
+      </div>
+      <div id="projModalBody" style="display: flex; flex-direction: column; gap: 20px;">
+        <!-- Connected tasks, notes, files, bookmarks -->
       </div>
     </div>
   </div>

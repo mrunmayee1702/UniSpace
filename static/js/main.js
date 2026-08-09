@@ -1,4 +1,4 @@
-// UniSpace Main Frontend Engine — My Drive Real Folder-Based Personal File Workspace
+// UniSpace Main Frontend Engine — Complete Production Digital Workspace
 
 const navItems = [
   { id: 'dashboard', label: 'Dashboard', icon: '<circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10"/>' },
@@ -14,8 +14,12 @@ const navItems = [
 ];
 
 let activeView = 'dashboard';
-let currentFolderId = null; // null = root My Drive
-let workspaceData = { notes: [], files: [], folders: [], tasks: [], timetable: [], projects: [], bookmarks: [], calendar: [], reminders: [] };
+let currentFolderId = null; // null = root
+let selectedNoteId = null;
+let taskViewMode = 'kanban'; // kanban or list
+let bookmarkCategoryFilter = 'All';
+let driveSortBy = 'date';
+let workspaceData = { notes: [], files: [], folders: [], tasks: [], timetable: [], projects: [], bookmarks: [], calendar: [], reminders: [], activities: [] };
 
 function showToast(message) {
   const container = document.getElementById('toastContainer');
@@ -48,16 +52,17 @@ function renderSidebarNav() {
 
 async function fetchWorkspaceData() {
   try {
-    const [notesRes, filesRes, foldersRes, tasksRes, timetableRes, projectsRes, bookmarksRes, calendarRes, remindersRes] = await Promise.all([
+    const [notesRes, filesRes, foldersRes, tasksRes, timetableRes, projectsRes, bookmarksRes, calendarRes, remindersRes, actRes] = await Promise.all([
       fetch('/api/v1/notes').then(r => r.json()),
-      fetch('/api/v1/files').then(r => r.json()),
+      fetch(`/api/v1/files?sort_by=${driveSortBy}`).then(r => r.json()),
       fetch('/api/v1/folders').then(r => r.json()),
       fetch('/api/v1/tasks').then(r => r.json()),
       fetch('/api/v1/timetable').then(r => r.json()),
       fetch('/api/v1/projects').then(r => r.json()),
       fetch('/api/v1/bookmarks').then(r => r.json()),
       fetch('/api/v1/calendar').then(r => r.json()),
-      fetch('/api/v1/reminders').then(r => r.json())
+      fetch('/api/v1/reminders').then(r => r.json()),
+      fetch('/api/v1/activity').then(r => r.json())
     ]);
 
     workspaceData = {
@@ -69,7 +74,8 @@ async function fetchWorkspaceData() {
       projects: projectsRes || [],
       bookmarks: bookmarksRes || [],
       calendar: calendarRes || [],
-      reminders: remindersRes || []
+      reminders: remindersRes || [],
+      activities: actRes || []
     };
   } catch (err) {
     console.error('Error fetching workspace data:', err);
@@ -79,8 +85,7 @@ async function fetchWorkspaceData() {
 async function deleteItem(type, id) {
   if (!confirm('Are you sure you want to delete this item?')) return;
   try {
-    const endpoint = `/api/v1/${type}/${id}`;
-    await fetch(endpoint, { method: 'DELETE' });
+    await fetch(`/api/v1/${type}/${id}`, { method: 'DELETE' });
     showToast('Item deleted successfully.');
     if (type === 'folders' && currentFolderId === id) {
       currentFolderId = null;
@@ -158,14 +163,14 @@ async function renameFolder(folderId, currentName) {
   }
 }
 
-async function createFolder() {
+async function createFolder(parentId = null) {
   const name = prompt('Enter folder name:');
   if (!name || name.trim() === '') return;
   try {
     await fetch('/api/v1/folders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim(), color: '#00F5A0' })
+      body: JSON.stringify({ name: name.trim(), color: '#00F5A0', parent_id: parentId || currentFolderId })
     });
     showToast('Folder created successfully.');
     await switchView(activeView);
@@ -253,10 +258,44 @@ async function toggleTaskStatus(id, currentStatus) {
     await fetch(`/api/v1/tasks/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: nextStatus })
+      body: JSON.stringify({ status: nextStatus, progress: nextStatus === 'done' ? 100 : (nextStatus === 'in_progress' ? 50 : 0) })
     });
     showToast(`Task status updated to ${nextStatus.replace('_', ' ').toUpperCase()}`);
     await switchView(activeView);
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function openProjectDetails(projId) {
+  try {
+    const res = await fetch(`/api/v1/projects/${projId}/details`).then(r => r.json());
+    const modal = document.getElementById('projectDetailsModal');
+    const nameEl = document.getElementById('projModalName');
+    const statusEl = document.getElementById('projModalStatus');
+    const descEl = document.getElementById('projModalDesc');
+    const bodyEl = document.getElementById('projModalBody');
+    if (!modal) return;
+
+    nameEl.innerText = res.project.name;
+    statusEl.innerText = (res.project.status || 'IN PROGRESS').toUpperCase();
+    descEl.innerText = res.project.description || 'No description provided';
+
+    bodyEl.innerHTML = `
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
+        <div class="glass-card" style="padding: 16px;">
+          <h4 style="color: var(--neon-mint); font-family: var(--font-heading); margin-bottom: 10px;">Associated Tasks (${res.tasks.length})</h4>
+          ${res.tasks.length > 0 ? res.tasks.map(t => `<div style="padding: 6px 0; border-bottom: 1px dashed var(--border-glass); color: #FFF; font-size: 0.9rem;">✅ ${t.title} (${t.status})</div>`).join('') : '<div style="color: var(--text-muted); font-size: 0.85rem;">No connected tasks.</div>'}
+        </div>
+        <div class="glass-card" style="padding: 16px;">
+          <h4 style="color: var(--neon-cyan); font-family: var(--font-heading); margin-bottom: 10px;">Associated Notes (${res.notes.length})</h4>
+          ${res.notes.length > 0 ? res.notes.map(n => `<div style="padding: 6px 0; border-bottom: 1px dashed var(--border-glass); color: #FFF; font-size: 0.9rem;">📝 ${n.title}</div>`).join('') : '<div style="color: var(--text-muted); font-size: 0.85rem;">No connected notes.</div>'}
+        </div>
+      </div>
+    `;
+
+    modal.classList.add('active');
+    document.getElementById('closeProjectModal').onclick = () => modal.classList.remove('active');
   } catch (err) {
     console.error(err);
   }
@@ -303,7 +342,7 @@ function renderDashboardView(container) {
         </div>
       </div>
 
-      <!-- Clickable Dynamic Stat Cards -->
+      <!-- Dynamic Stat Cards -->
       <div class="col-3">
         <div class="glass-panel" style="padding: 18px 20px; cursor: pointer;" onclick="window.switchView('tasks')">
           <h3 style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 6px; font-family: var(--font-mono); font-weight: 700;">PENDING TASKS</h3>
@@ -336,28 +375,20 @@ function renderDashboardView(container) {
         </div>
       </div>
 
-      <!-- Recent Files Section -->
-      <div class="col-12">
+      <!-- Recent Activity Stream -->
+      <div class="col-6">
         <div class="glass-panel">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-            <h3 style="font-family: var(--font-heading); font-weight: 700; font-size: 1.1rem;">Recent Files & Storage</h3>
-            <button class="badge-tag" style="cursor: pointer;" onclick="window.switchView('drive')">View All Drive</button>
+            <h3 style="font-family: var(--font-heading); font-weight: 700; font-size: 1.1rem;">Recent Activity Stream</h3>
+            <span class="badge-tag">Real-Time Sync</span>
           </div>
-          <div style="display: flex; gap: 16px; flex-wrap: wrap;">
-            ${workspaceData.files.slice(0, 4).map(f => `
-              <div class="glass-card" onclick="window.previewFile('${f.id}')" style="cursor: pointer; flex: 1; min-width: 220px; padding: 14px; display: flex; align-items: center; justify-content: space-between;">
-                <div style="display: flex; align-items: center; gap: 12px; overflow: hidden;">
-                  <div style="width: 38px; height: 38px; border-radius: 8px; background: rgba(0, 245, 160, 0.15); color: var(--neon-mint); display: flex; align-items: center; justify-content: center; font-weight: 800; font-family: var(--font-mono); font-size: 0.75rem;">${(f.file_extension || 'FILE').toUpperCase()}</div>
-                  <div style="overflow: hidden;">
-                    <div style="font-weight: 700; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #FFF;">${f.file_name}</div>
-                    <div style="font-size: 0.72rem; color: var(--text-muted);">${(f.file_size / 1024 / 1024).toFixed(1)} MB</div>
-                  </div>
-                </div>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            ${workspaceData.activities.length > 0 ? workspaceData.activities.slice(0, 4).map(act => `
+              <div class="glass-card" style="padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-size: 0.88rem; color: #FFF;">⚡ ${act.description}</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono);">${act.created_at}</div>
               </div>
-            `).join('')}
-            ${workspaceData.files.length === 0 ? `
-              <div style="padding: 20px; text-align: center; width: 100%; color: var(--text-muted); font-size: 0.9rem;">✨ No uploaded files yet. Click "+ Upload File" to add documents.</div>
-            ` : ''}
+            `).join('') : '<div style="padding: 18px; text-align: center; color: var(--text-muted); font-size: 0.88rem;">✨ Your workspace is clean. Create items to see activity logs.</div>'}
           </div>
         </div>
       </div>
@@ -379,39 +410,11 @@ function renderDashboardView(container) {
                 <button onclick="event.stopPropagation(); window.deleteItem('notes', '${n.id}')" style="background: none; border: none; color: var(--neon-rose); cursor: pointer; font-size: 1.1rem;" title="Delete Note">🗑️</button>
               </div>
             `).join('') : `
-              <div style="padding: 28px; text-align: center; border: 1px dashed var(--border-glass); border-radius: var(--radius-md);">
+              <div style="padding: 24px; text-align: center; border: 1px dashed var(--border-glass); border-radius: var(--radius-md);">
                 <div style="font-size: 1.5rem; margin-bottom: 8px;">📝</div>
                 <div style="font-weight: 700; color: #FFF;">Your notes space is empty</div>
-                <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px; margin-bottom: 16px;">Capture thoughts, study notes, or meeting minutes.</p>
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px; margin-bottom: 14px;">Capture thoughts, study notes, or meeting minutes.</p>
                 <button class="btn-quick-add" style="padding: 6px 16px; font-size: 0.8rem;" onclick="window.openCreationModal('note')">+ Create your first note</button>
-              </div>
-            `}
-          </div>
-        </div>
-      </div>
-
-      <!-- Today's Timetable Glance -->
-      <div class="col-6">
-        <div class="glass-panel">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px;">
-            <h3 style="font-family: var(--font-heading); font-weight: 700; font-size: 1.1rem;">Today's Lectures</h3>
-            <button class="badge-tag" style="cursor: pointer;" onclick="window.openCreationModal('timetable')">+ Add Class</button>
-          </div>
-          <div style="display: flex; flex-direction: column; gap: 14px;">
-            ${workspaceData.timetable.length > 0 ? workspaceData.timetable.slice(0, 3).map(t => `
-              <div class="class-card" style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                  <div class="class-title">${t.subject}</div>
-                  <div class="class-meta">⏰ ${t.day_of_week} &bull; ${t.start_time} - ${t.end_time} &bull; 📍 ${t.room || 'Hall TBD'}</div>
-                </div>
-                <button onclick="event.stopPropagation(); window.deleteItem('timetable', '${t.id}')" style="background: none; border: none; color: var(--neon-rose); cursor: pointer; font-size: 1.1rem;" title="Delete Lecture">🗑️</button>
-              </div>
-            `).join('') : `
-              <div style="padding: 28px; text-align: center; border: 1px dashed var(--border-glass); border-radius: var(--radius-md);">
-                <div style="font-size: 1.5rem; margin-bottom: 8px;">📅</div>
-                <div style="font-weight: 700; color: #FFF;">No lectures scheduled</div>
-                <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px; margin-bottom: 16px;">Keep track of your weekly college class schedule.</p>
-                <button class="btn-quick-add" style="padding: 6px 16px; font-size: 0.8rem;" onclick="window.openCreationModal('timetable')">+ Add your first lecture</button>
               </div>
             `}
           </div>
@@ -429,27 +432,33 @@ function renderDriveView(container) {
   });
 
   container.innerHTML = `
-    <!-- Header & Breadcrumbs -->
+    <!-- Header & Breadcrumbs & Toolbar -->
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
       <div>
         <div style="display: flex; align-items: center; gap: 8px; font-family: var(--font-heading); font-weight: 800; font-size: 1.6rem; color: var(--neon-mint); margin-bottom: 4px;">
           <span style="cursor: pointer;" onclick="window.openFolder(null)">📁 My Drive</span>
           ${currentFolder ? `<span style="color: var(--text-muted);">&gt;</span> <span style="color: #FFF;">${currentFolder.name}</span>` : ''}
         </div>
-        <p style="color: var(--text-secondary); font-size: 0.88rem;">Real folder-based file management & SQLite state persistence</p>
+        <p style="color: var(--text-secondary); font-size: 0.88rem;">Nested folder management, in-app file previewer & original format downloader</p>
       </div>
-      <div style="display: flex; gap: 12px;">
-        ${!currentFolderId ? `<button class="btn-quick-add" style="background: rgba(0, 245, 160, 0.15); color: var(--neon-mint); border: 1px solid var(--neon-mint); box-shadow: none;" onclick="window.createFolder()">+ New Folder</button>` : ''}
-        <button class="btn-quick-add" onclick="window.openCreationModal('file')">↑ Upload File ${currentFolder ? 'Here' : ''}</button>
+      <div style="display: flex; gap: 12px; align-items: center;">
+        <select style="background: var(--bg-surface); border: 1px solid var(--border-glass); padding: 8px 12px; border-radius: var(--radius-sm); color: #FFF; outline: none; font-size: 0.85rem;" onchange="window.setDriveSort(this.value)">
+          <option value="date" ${driveSortBy === 'date' ? 'selected' : ''}>Sort by Date</option>
+          <option value="name" ${driveSortBy === 'name' ? 'selected' : ''}>Sort by Name</option>
+          <option value="size" ${driveSortBy === 'size' ? 'selected' : ''}>Sort by Size</option>
+          <option value="type" ${driveSortBy === 'type' ? 'selected' : ''}>Sort by Type</option>
+        </select>
+        <button class="btn-quick-add" style="background: rgba(0, 245, 160, 0.15); color: var(--neon-mint); border: 1px solid var(--neon-mint); box-shadow: none;" onclick="window.createFolder()">+ New Folder</button>
+        <button class="btn-quick-add" onclick="window.openCreationModal('file')">↑ Upload File</button>
       </div>
     </div>
 
-    <!-- Folders Grid (Root View Only) -->
-    ${!currentFolderId && workspaceData.folders.length > 0 ? `
+    <!-- Folders Grid -->
+    ${workspaceData.folders.length > 0 ? `
       <div style="margin-bottom: 28px;">
-        <h3 style="font-family: var(--font-heading); font-size: 0.88rem; font-weight: 700; color: var(--text-muted); margin-bottom: 12px; font-family: var(--font-mono); font-weight: 700;">FOLDERS</h3>
+        <h3 style="font-family: var(--font-heading); font-size: 0.88rem; font-weight: 700; color: var(--text-muted); margin-bottom: 12px; font-family: var(--font-mono);">FOLDERS</h3>
         <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;">
-          ${workspaceData.folders.map(fold => {
+          ${workspaceData.folders.filter(f => currentFolderId ? f.parent_id === currentFolderId : !f.parent_id).map(fold => {
             const count = workspaceData.files.filter(f => f.folder_id === fold.id).length;
             return `
               <div class="glass-card" onclick="window.openFolder('${fold.id}')" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; padding: 14px; border-left: 3px solid ${fold.color || 'var(--neon-mint)'};">
@@ -473,7 +482,7 @@ function renderDriveView(container) {
 
     <!-- Files Section -->
     <div>
-      <h3 style="font-family: var(--font-heading); font-size: 0.88rem; font-weight: 700; color: var(--text-muted); margin-bottom: 12px; font-family: var(--font-mono); font-weight: 700;">
+      <h3 style="font-family: var(--font-heading); font-size: 0.88rem; font-weight: 700; color: var(--text-muted); margin-bottom: 12px; font-family: var(--font-mono);">
         ${currentFolder ? `FILES IN "${currentFolder.name.toUpperCase()}"` : 'ROOT FILES'} (CLICK TO PREVIEW)
       </h3>
       ${displayedFiles.length > 0 ? `
@@ -507,10 +516,20 @@ function renderDriveView(container) {
   `;
 }
 
+function setDriveSort(sortBy) {
+  driveSortBy = sortBy;
+  switchView('drive');
+}
+
 function renderNotesView(container) {
+  if (!selectedNoteId && workspaceData.notes.length > 0) {
+    selectedNoteId = workspaceData.notes[0].id;
+  }
+  const curNote = workspaceData.notes.find(n => n.id === selectedNoteId);
+
   container.innerHTML = `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-      <h2 style="font-family: var(--font-heading); font-weight: 800; font-size: 1.7rem; color: var(--neon-mint);">Notes Workspace</h2>
+      <h2 style="font-family: var(--font-heading); font-weight: 800; font-size: 1.7rem; color: var(--neon-mint);">Personal Knowledge Notes</h2>
       <button class="btn-quick-add" onclick="window.openCreationModal('note')">+ New Note</button>
     </div>
 
@@ -518,20 +537,27 @@ function renderNotesView(container) {
       <div style="display: flex; gap: 20px; height: calc(100vh - 180px);">
         <div style="width: 320px;" class="glass-panel">
           <div style="padding-bottom: 14px; border-bottom: 1px solid var(--border-glass); margin-bottom: 12px;">
-            <h3 style="font-family: var(--font-heading); font-weight: 700; font-size: 1.15rem;">All Notes</h3>
+            <h3 style="font-family: var(--font-heading); font-weight: 700; font-size: 1.15rem;">All Notes (${workspaceData.notes.length})</h3>
           </div>
-          <div style="display: flex; flex-direction: column; gap: 10px;">
-            ${workspaceData.notes.map((n, i) => `
-              <div class="glass-card" style="padding: 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; ${i === 0 ? 'border-color: var(--neon-mint); box-shadow: var(--glow-mint);' : ''}">
-                <div style="font-weight: 700; font-size: 0.95rem; color: #FFF;">${n.title}</div>
+          <div style="display: flex; flex-direction: column; gap: 10px; overflow-y: auto; max-height: calc(100% - 40px);">
+            ${workspaceData.notes.map(n => `
+              <div class="glass-card" onclick="window.selectNote('${n.id}')" style="padding: 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; ${n.id === selectedNoteId ? 'border-color: var(--neon-mint); box-shadow: var(--glow-mint);' : ''}">
+                <div>
+                  <div style="font-weight: 700; font-size: 0.95rem; color: #FFF;">${n.is_pinned ? '📌 ' : ''}${n.title}</div>
+                </div>
                 <button onclick="event.stopPropagation(); window.deleteItem('notes', '${n.id}')" style="background: none; border: none; color: var(--neon-rose); cursor: pointer; font-size: 1rem;" title="Delete Note">🗑️</button>
               </div>
             `).join('')}
           </div>
         </div>
-        <div style="flex: 1; padding: 24px;" class="glass-panel">
-          <h2 style="font-family: var(--font-heading); font-size: 1.6rem; font-weight: 800; margin-bottom: 12px; color: var(--neon-mint);">${workspaceData.notes[0]?.title || 'Notes'}</h2>
-          <p style="color: var(--text-secondary); line-height: 1.7; font-size: 1rem;">${workspaceData.notes[0]?.content || 'Select a note to read.'}</p>
+        <div style="flex: 1; padding: 24px; display: flex; flex-direction: column;" class="glass-panel">
+          ${curNote ? `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+              <h2 style="font-family: var(--font-heading); font-size: 1.6rem; font-weight: 800; color: var(--neon-mint);">${curNote.title}</h2>
+              <button class="badge-tag" style="cursor: pointer;" onclick="window.togglePinNote('${curNote.id}', ${!curNote.is_pinned})">${curNote.is_pinned ? '📌 Pinned' : 'Pin to top'}</button>
+            </div>
+            <textarea style="flex: 1; width: 100%; background: #070B14; border: 1px solid var(--border-glass); padding: 18px; border-radius: 12px; color: #FFF; font-family: var(--font-display); font-size: 1rem; line-height: 1.7; outline: none; resize: none;" onchange="window.updateNoteContent('${curNote.id}', this.value)">${curNote.content}</textarea>
+          ` : '<p>Select a note to read.</p>'}
         </div>
       </div>
     ` : `
@@ -545,57 +571,111 @@ function renderNotesView(container) {
   `;
 }
 
+function selectNote(id) {
+  selectedNoteId = id;
+  switchView('notes');
+}
+
+async function updateNoteContent(id, content) {
+  try {
+    await fetch(`/api/v1/notes/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: content })
+    });
+    showToast('Note autosaved.');
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function togglePinNote(id, isPinned) {
+  try {
+    await fetch(`/api/v1/notes/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_pinned: isPinned })
+    });
+    showToast(isPinned ? 'Note pinned to top.' : 'Note unpinned.');
+    switchView('notes');
+  } catch (err) {
+    console.error(err);
+  }
+}
+
 function renderTasksView(container) {
   container.innerHTML = `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
       <h2 style="font-family: var(--font-heading); font-weight: 800; font-size: 1.7rem; color: var(--neon-mint);">Tasks Matrix</h2>
-      <button class="btn-quick-add" onclick="window.openCreationModal('task')">+ New Task</button>
+      <div style="display: flex; gap: 12px;">
+        <button class="badge-tag" style="cursor: pointer;" onclick="window.setTaskViewMode('${taskViewMode === 'kanban' ? 'list' : 'kanban'}')">Switch to ${taskViewMode === 'kanban' ? 'List View' : 'Kanban View'}</button>
+        <button class="btn-quick-add" onclick="window.openCreationModal('task')">+ New Task</button>
+      </div>
     </div>
 
     ${workspaceData.tasks.length > 0 ? `
-      <div class="kanban-board">
-        <div class="kanban-column">
-          <div class="kanban-column-header">TO DO</div>
-          ${workspaceData.tasks.filter(t => t.status === 'todo').map(t => `
-            <div class="glass-card" style="margin-bottom: 12px;">
-              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-                <div style="font-weight: 700; color: #FFF;">${t.title}</div>
-                <button onclick="window.deleteItem('tasks', '${t.id}')" style="background: none; border: none; color: var(--neon-rose); cursor: pointer; font-size: 0.9rem;" title="Delete Task">🗑️</button>
+      ${taskViewMode === 'kanban' ? `
+        <div class="kanban-board">
+          <div class="kanban-column">
+            <div class="kanban-column-header">TO DO</div>
+            ${workspaceData.tasks.filter(t => t.status === 'todo').map(t => `
+              <div class="glass-card" style="margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                  <div style="font-weight: 700; color: #FFF;">${t.title}</div>
+                  <button onclick="window.deleteItem('tasks', '${t.id}')" style="background: none; border: none; color: var(--neon-rose); cursor: pointer; font-size: 0.9rem;" title="Delete Task">🗑️</button>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                  <span class="badge-tag" style="background: rgba(255, 46, 147, 0.15); color: var(--neon-rose);">${(t.priority || 'medium').toUpperCase()}</span>
+                  <button class="badge-tag" style="cursor: pointer;" onclick="window.toggleTaskStatus('${t.id}', '${t.status}')">Move to In Progress &rarr;</button>
+                </div>
               </div>
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
-                <span class="badge-tag" style="background: rgba(255, 46, 147, 0.15); color: var(--neon-rose);">${(t.priority || 'medium').toUpperCase()}</span>
-                <button class="badge-tag" style="cursor: pointer;" onclick="window.toggleTaskStatus('${t.id}', '${t.status}')">Move to In Progress &rarr;</button>
+            `).join('')}
+          </div>
+          <div class="kanban-column">
+            <div class="kanban-column-header">IN PROGRESS</div>
+            ${workspaceData.tasks.filter(t => t.status === 'in_progress').map(t => `
+              <div class="glass-card" style="margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                  <div style="font-weight: 700; color: #FFF;">${t.title}</div>
+                  <button onclick="window.deleteItem('tasks', '${t.id}')" style="background: none; border: none; color: var(--neon-rose); cursor: pointer; font-size: 0.9rem;" title="Delete Task">🗑️</button>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                  <span class="badge-tag" style="background: rgba(0, 245, 160, 0.15); color: var(--neon-mint);">${(t.priority || 'high').toUpperCase()}</span>
+                  <button class="badge-tag" style="cursor: pointer; background: rgba(0, 245, 160, 0.2);" onclick="window.toggleTaskStatus('${t.id}', '${t.status}')">Mark Complete &check;</button>
+                </div>
               </div>
-            </div>
-          `).join('')}
+            `).join('')}
+          </div>
+          <div class="kanban-column">
+            <div class="kanban-column-header">COMPLETED</div>
+            ${workspaceData.tasks.filter(t => t.status === 'done').map(t => `
+              <div class="glass-card" style="margin-bottom: 12px; opacity: 0.7;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                  <div style="font-weight: 700; text-decoration: line-through; color: #FFF;">${t.title}</div>
+                  <button onclick="window.deleteItem('tasks', '${t.id}')" style="background: none; border: none; color: var(--neon-rose); cursor: pointer; font-size: 0.9rem;" title="Delete Task">🗑️</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
         </div>
-        <div class="kanban-column">
-          <div class="kanban-column-header">IN PROGRESS</div>
-          ${workspaceData.tasks.filter(t => t.status === 'in_progress').map(t => `
-            <div class="glass-card" style="margin-bottom: 12px;">
-              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-                <div style="font-weight: 700; color: #FFF;">${t.title}</div>
-                <button onclick="window.deleteItem('tasks', '${t.id}')" style="background: none; border: none; color: var(--neon-rose); cursor: pointer; font-size: 0.9rem;" title="Delete Task">🗑️</button>
+      ` : `
+        <div class="glass-panel">
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            ${workspaceData.tasks.map(t => `
+              <div class="glass-card" style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 14px;">
+                  <input type="checkbox" ${t.status === 'done' ? 'checked' : ''} onchange="window.toggleTaskStatus('${t.id}', '${t.status}')" style="width: 18px; height: 18px; accent-color: var(--neon-mint);" />
+                  <div>
+                    <div style="font-weight: 700; color: #FFF; ${t.status === 'done' ? 'text-decoration: line-through;' : ''}">${t.title}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Due: ${t.due_date || 'No date set'} &bull; Category: ${t.category || 'General'}</div>
+                  </div>
+                </div>
+                <button onclick="window.deleteItem('tasks', '${t.id}')" style="background: none; border: none; color: var(--neon-rose); cursor: pointer;" title="Delete Task">🗑️</button>
               </div>
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
-                <span class="badge-tag" style="background: rgba(0, 245, 160, 0.15); color: var(--neon-mint);">${(t.priority || 'high').toUpperCase()}</span>
-                <button class="badge-tag" style="cursor: pointer; background: rgba(0, 245, 160, 0.2);" onclick="window.toggleTaskStatus('${t.id}', '${t.status}')">Mark Complete &check;</button>
-              </div>
-            </div>
-          `).join('')}
+            `).join('')}
+          </div>
         </div>
-        <div class="kanban-column">
-          <div class="kanban-column-header">COMPLETED</div>
-          ${workspaceData.tasks.filter(t => t.status === 'done').map(t => `
-            <div class="glass-card" style="margin-bottom: 12px; opacity: 0.7;">
-              <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                <div style="font-weight: 700; text-decoration: line-through; color: #FFF;">${t.title}</div>
-                <button onclick="window.deleteItem('tasks', '${t.id}')" style="background: none; border: none; color: var(--neon-rose); cursor: pointer; font-size: 0.9rem;" title="Delete Task">🗑️</button>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
+      `}
     ` : `
       <div class="glass-panel" style="padding: 48px; text-align: center;">
         <div style="font-size: 2.5rem; margin-bottom: 12px;">✅</div>
@@ -605,6 +685,11 @@ function renderTasksView(container) {
       </div>
     `}
   `;
+}
+
+function setTaskViewMode(mode) {
+  taskViewMode = mode;
+  switchView('tasks');
 }
 
 function renderTimetableView(container) {
@@ -622,7 +707,7 @@ function renderTimetableView(container) {
               <div>
                 <div style="font-size: 0.75rem; color: var(--neon-mint); font-family: var(--font-mono); font-weight: 700; text-transform: uppercase;">${t.day_of_week}</div>
                 <div class="class-title" style="margin-top: 4px;">${t.subject}</div>
-                <div class="class-meta" style="margin-top: 8px;">⏰ ${t.start_time} - ${t.end_time}</div>
+                <div class="class-meta" style="margin-top: 8px;">⏰ ${t.start_time} - ${t.end_time || ''}</div>
                 <div class="class-meta">📍 ${t.room || 'Hall TBD'} &bull; 👤 ${t.instructor || 'Instructor TBD'}</div>
               </div>
               <button onclick="window.deleteItem('timetable', '${t.id}')" style="background: none; border: none; color: var(--neon-rose); cursor: pointer; font-size: 1rem;" title="Delete Lecture">🗑️</button>
@@ -642,6 +727,8 @@ function renderTimetableView(container) {
 }
 
 function renderBookmarksView(container) {
+  const filtered = bookmarkCategoryFilter === 'All' ? workspaceData.bookmarks : workspaceData.bookmarks.filter(b => b.category === bookmarkCategoryFilter);
+
   container.innerHTML = `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
       <div>
@@ -653,7 +740,7 @@ function renderBookmarksView(container) {
 
     ${workspaceData.bookmarks.length > 0 ? `
       <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
-        ${workspaceData.bookmarks.map(b => `
+        ${filtered.map(b => `
           <div class="glass-card" style="display: flex; justify-content: space-between; align-items: flex-start;">
             <div>
               <div style="font-weight: 700; font-size: 1rem; margin-bottom: 6px; color: #FFF;">${b.title}</div>
@@ -678,8 +765,8 @@ function renderProjectsView(container) {
   container.innerHTML = `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
       <div>
-        <h2 style="font-family: var(--font-heading); font-weight: 800; font-size: 1.7rem; color: var(--neon-mint);">Projects Matrix</h2>
-        <p style="color: var(--text-secondary); font-size: 0.9rem;">Development workspaces and SaaS projects</p>
+        <h2 style="font-family: var(--font-heading); font-weight: 800; font-size: 1.7rem; color: var(--neon-mint);">Projects Hub</h2>
+        <p style="color: var(--text-secondary); font-size: 0.9rem;">Development workspaces and SaaS project hubs</p>
       </div>
       <button class="btn-quick-add" onclick="window.openCreationModal('project')">+ New Project</button>
     </div>
@@ -687,13 +774,16 @@ function renderProjectsView(container) {
     ${workspaceData.projects.length > 0 ? `
       <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
         ${workspaceData.projects.map(p => `
-          <div class="glass-panel" style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div class="glass-panel" style="display: flex; justify-content: space-between; align-items: flex-start; cursor: pointer;" onclick="window.openProjectDetails('${p.id}')">
             <div>
               <div style="font-family: var(--font-heading); font-weight: 800; font-size: 1.25rem; margin-bottom: 6px; color: #FFF;">${p.name}</div>
-              <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 16px;">${p.description || 'No description'}</p>
-              <span class="badge-tag">${(p.status || 'In Progress').toUpperCase()}</span>
+              <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 16px;">${p.description || 'No description provided'}</p>
+              <div style="display: flex; gap: 10px; align-items: center;">
+                <span class="badge-tag">${(p.status || 'In Progress').toUpperCase()}</span>
+                <span style="font-size: 0.78rem; color: var(--text-muted);">${p.task_count || 0} Connected Tasks</span>
+              </div>
             </div>
-            <button onclick="window.deleteItem('projects', '${p.id}')" style="background: none; border: none; color: var(--neon-rose); cursor: pointer; font-size: 1.1rem;" title="Delete Project">🗑️</button>
+            <button onclick="event.stopPropagation(); window.deleteItem('projects', '${p.id}')" style="background: none; border: none; color: var(--neon-rose); cursor: pointer; font-size: 1.1rem;" title="Delete Project">🗑️</button>
           </div>
         `).join('')}
       </div>
@@ -779,43 +869,72 @@ function renderSettingsView(container) {
   container.innerHTML = `
     <div style="margin-bottom: 24px;">
       <h2 style="font-family: var(--font-heading); font-weight: 800; font-size: 1.7rem; color: var(--neon-mint);">Workspace Settings</h2>
-      <p style="color: var(--text-secondary); font-size: 0.9rem;">Customize your personal UniSpace workspace</p>
+      <p style="color: var(--text-secondary); font-size: 0.9rem;">Customize your profile, security, and workspace preferences</p>
     </div>
 
     <div class="dashboard-grid">
       <div class="col-6">
         <div class="glass-panel">
-          <h3 style="font-weight: 700; margin-bottom: 16px;">Profile & Credentials</h3>
-          <div style="display: flex; flex-direction: column; gap: 12px;">
+          <h3 style="font-weight: 700; margin-bottom: 16px; color: #FFF;">Profile Information</h3>
+          <form id="profileForm" style="display: flex; flex-direction: column; gap: 14px;">
             <div>
-              <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">DATABASE ENGINE</label>
-              <div style="font-weight: 600; color: var(--neon-mint); font-size: 1rem; margin-top: 4px;">SQLite 3 (Strict User Data Isolation Active)</div>
+              <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">FULL NAME</label>
+              <input type="text" id="settingFullName" value="User Profile" required style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: #FFF; margin-top: 4px;" />
             </div>
             <div>
-              <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">DATA PRIVACY</label>
-              <div style="font-weight: 600; color: #FFF; font-size: 1rem; margin-top: 4px;">Only authenticated account can access user records</div>
+              <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">MAJOR STUDY</label>
+              <input type="text" id="settingMajor" value="Computer Science & AI" required style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: #FFF; margin-top: 4px;" />
             </div>
-          </div>
+            <button type="submit" class="btn-quick-add" style="justify-content: center; width: 100%;">Save Profile</button>
+          </form>
         </div>
       </div>
 
       <div class="col-6">
         <div class="glass-panel">
-          <h3 style="font-weight: 700; margin-bottom: 16px;">Theme & Storage</h3>
-          <div style="display: flex; flex-direction: column; gap: 12px;">
+          <h3 style="font-weight: 700; margin-bottom: 16px; color: #FFF;">Security & Password</h3>
+          <form id="passwordForm" style="display: flex; flex-direction: column; gap: 14px;">
             <div>
-              <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">ACTIVE THEME</label>
-              <div style="font-weight: 600; color: var(--neon-cyan); font-size: 1rem; margin-top: 4px;">Obsidian Cyber-Aurora Dark Theme</div>
+              <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">CURRENT PASSWORD</label>
+              <input type="password" id="oldPassword" required style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: #FFF; margin-top: 4px;" />
             </div>
             <div>
-              <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">LOCAL DISK ALLOCATION</label>
-              <div style="font-weight: 600; color: #FFF; font-size: 1rem; margin-top: 4px;">15 GB Maximum Limit</div>
+              <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">NEW PASSWORD</label>
+              <input type="password" id="newPassword" required style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: #FFF; margin-top: 4px;" />
             </div>
-          </div>
+            <button type="submit" class="btn-quick-add" style="justify-content: center; width: 100%; background: rgba(0, 210, 255, 0.15); color: var(--neon-cyan); border: 1px solid var(--neon-cyan);">Update Password</button>
+          </form>
         </div>
       </div>
     </div>
   `;
+
+  document.getElementById('profileForm').onsubmit = async (e) => {
+    e.preventDefault();
+    await fetch('/api/v1/user/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ full_name: document.getElementById('settingFullName').value, major_study: document.getElementById('settingMajor').value })
+    });
+    showToast('Profile updated successfully.');
+  };
+
+  document.getElementById('passwordForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const res = await fetch('/api/v1/user/password', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ old_password: document.getElementById('oldPassword').value, new_password: document.getElementById('newPassword').value })
+    });
+    if (res.ok) {
+      showToast('Password changed successfully.');
+      document.getElementById('oldPassword').value = '';
+      document.getElementById('newPassword').value = '';
+    } else {
+      const err = await res.json();
+      alert(err.error || 'Password update failed.');
+    }
+  };
 }
 
 // Quick Creation Modal Forms
@@ -1051,7 +1170,7 @@ function setupGlobalSearch() {
   input.addEventListener('input', async (e) => {
     const q = e.target.value.trim();
     if (!q) {
-      resultsContainer.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem; padding: 20px 0; text-align: center;">Start typing to search notes, tasks, files, projects...</p>';
+      resultsContainer.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem; padding: 20px 0; text-align: center;">Start typing to search notes, tasks, files, projects, bookmarks, events...</p>';
       return;
     }
     try {
@@ -1060,18 +1179,22 @@ function setupGlobalSearch() {
       const tasks = res.results.tasks || [];
       const files = res.results.files || [];
       const projects = res.results.projects || [];
+      const bookmarks = res.results.bookmarks || [];
+      const events = res.results.events || [];
 
-      if (notes.length === 0 && tasks.length === 0 && files.length === 0 && projects.length === 0) {
+      if (notes.length === 0 && tasks.length === 0 && files.length === 0 && projects.length === 0 && bookmarks.length === 0 && events.length === 0) {
         resultsContainer.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem; padding: 20px 0; text-align: center;">No matching results found.</p>';
         return;
       }
 
       resultsContainer.innerHTML = `
         <div style="padding: 12px; display: flex; flex-direction: column; gap: 8px;">
-          ${notes.map(n => `<div class="glass-card" style="padding: 10px;">📝 <b>Note:</b> ${n.title}</div>`).join('')}
-          ${tasks.map(t => `<div class="glass-card" style="padding: 10px;">✅ <b>Task:</b> ${t.title}</div>`).join('')}
-          ${files.map(f => `<div class="glass-card" style="padding: 10px; cursor: pointer;" onclick="window.previewFile('${f.id}')">📁 <b>File:</b> ${f.title}</div>`).join('')}
-          ${projects.map(p => `<div class="glass-card" style="padding: 10px;">🚀 <b>Project:</b> ${p.title}</div>`).join('')}
+          ${notes.map(n => `<div class="glass-card" style="padding: 10px; cursor: pointer;" onclick="window.switchView('notes'); document.getElementById('searchModal').classList.remove('active');">📝 <b>Note:</b> ${n.title}</div>`).join('')}
+          ${tasks.map(t => `<div class="glass-card" style="padding: 10px; cursor: pointer;" onclick="window.switchView('tasks'); document.getElementById('searchModal').classList.remove('active');">✅ <b>Task:</b> ${t.title}</div>`).join('')}
+          ${files.map(f => `<div class="glass-card" style="padding: 10px; cursor: pointer;" onclick="window.previewFile('${f.id}'); document.getElementById('searchModal').classList.remove('active');">📁 <b>File:</b> ${f.title}</div>`).join('')}
+          ${projects.map(p => `<div class="glass-card" style="padding: 10px; cursor: pointer;" onclick="window.openProjectDetails('${p.id}'); document.getElementById('searchModal').classList.remove('active');">🚀 <b>Project:</b> ${p.title}</div>`).join('')}
+          ${bookmarks.map(b => `<div class="glass-card" style="padding: 10px;">🔖 <b>Bookmark:</b> ${b.title}</div>`).join('')}
+          ${events.map(ev => `<div class="glass-card" style="padding: 10px;">🗓️ <b>Event:</b> ${ev.title}</div>`).join('')}
         </div>
       `;
     } catch (err) {
@@ -1182,6 +1305,12 @@ window.addEventListener('DOMContentLoaded', () => {
   window.previewFile = previewFile;
   window.toggleTaskStatus = toggleTaskStatus;
   window.openCreationModal = openCreationModal;
+  window.openProjectDetails = openProjectDetails;
+  window.selectNote = selectNote;
+  window.updateNoteContent = updateNoteContent;
+  window.togglePinNote = togglePinNote;
+  window.setTaskViewMode = setTaskViewMode;
+  window.setDriveSort = setDriveSort;
   renderSidebarNav();
   switchView('dashboard');
   setupQuickAddModal();
