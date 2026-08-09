@@ -42,6 +42,9 @@ class User(UserMixin, db.Model):
     avatar_url = db.Column(db.String(500), nullable=True)
     major_study = db.Column(db.String(100), nullable=True, default='Computer Science')
     theme_preference = db.Column(db.String(50), default='cyber-dark')
+    reminder_notifs = db.Column(db.Boolean, default=True)
+    task_notifs = db.Column(db.Boolean, default=True)
+    event_notifs = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password):
