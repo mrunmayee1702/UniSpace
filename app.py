@@ -82,12 +82,56 @@ def seed_demo_data(user):
     log_activity(user.id, "created", "Initialized demo workspace profile", "workspace")
 
 
-# HTML Authentication & View Routes
 @app.route('/')
 def index():
     if not current_user.is_authenticated:
         return redirect(url_for('login'))
-    return render_template('index.html')
+    return render_template('index.html', initial_view='dashboard')
+
+@app.route('/settings')
+@login_required
+def settings_route():
+    return render_template('index.html', initial_view='settings')
+
+@app.route('/drive')
+@login_required
+def drive_route():
+    return render_template('index.html', initial_view='drive')
+
+@app.route('/notes')
+@login_required
+def notes_route():
+    return render_template('index.html', initial_view='notes')
+
+@app.route('/tasks')
+@login_required
+def tasks_route():
+    return render_template('index.html', initial_view='tasks')
+
+@app.route('/calendar')
+@login_required
+def calendar_route():
+    return render_template('index.html', initial_view='calendar')
+
+@app.route('/timetable')
+@login_required
+def timetable_route():
+    return render_template('index.html', initial_view='timetable')
+
+@app.route('/bookmarks')
+@login_required
+def bookmarks_route():
+    return render_template('index.html', initial_view='bookmarks')
+
+@app.route('/projects')
+@login_required
+def projects_route():
+    return render_template('index.html', initial_view='projects')
+
+@app.route('/reminders')
+@login_required
+def reminders_route():
+    return render_template('index.html', initial_view='reminders')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
