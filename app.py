@@ -135,7 +135,40 @@ def logout():
     return redirect(url_for('login'))
 
 
-# USER PROFILE & SETTINGS API
+# USER PROFILE & SETTINGS API (Functional Control Center)
+@app.route('/api/v1/user/settings')
+@login_required
+def get_user_settings():
+    total_bytes = db.session.query(db.func.sum(File.file_size)).filter(File.user_id == current_user.id).scalar() or 0
+    file_count = File.query.filter_by(user_id=current_user.id).count()
+    note_count = Note.query.filter_by(user_id=current_user.id).count()
+    task_count = Task.query.filter_by(user_id=current_user.id).count()
+    project_count = Project.query.filter_by(user_id=current_user.id).count()
+
+    return jsonify({
+        "profile": {
+            "email": current_user.email,
+            "full_name": current_user.full_name,
+            "major_study": current_user.major_study or 'Computer Science'
+        },
+        "appearance": {
+            "theme_preference": current_user.theme_preference or 'cyber-dark'
+        },
+        "notifications": {
+            "reminder_notifs": current_user.reminder_notifs,
+            "task_notifs": current_user.task_notifs,
+            "event_notifs": current_user.event_notifs
+        },
+        "workspace": {
+            "total_bytes": total_bytes,
+            "total_mb": round(total_bytes / (1024 * 1024), 2),
+            "file_count": file_count,
+            "note_count": note_count,
+            "task_count": task_count,
+            "project_count": project_count
+        }
+    })
+
 @app.route('/api/v1/user/profile', methods=['PUT'])
 @login_required
 def update_profile():
@@ -152,19 +185,95 @@ def update_password():
     data = request.json or {}
     old_pw = data.get('old_password')
     new_pw = data.get('new_password')
-    if not old_pw or not new_pw:
-        return jsonify({"error": "Missing old or new password"}), 400
+    confirm_pw = data.get('confirm_password')
+
+    if not old_pw or not new_pw or not confirm_pw:
+        return jsonify({"error": "All password fields are required."}), 400
+    if new_pw != confirm_pw:
+        return jsonify({"error": "New password and confirmation do not match."}), 400
     if not current_user.check_password(old_pw):
-        return jsonify({"error": "Incorrect current password"}), 401
+        return jsonify({"error": "Incorrect current password."}), 401
     
     current_user.set_password(new_pw)
     db.session.commit()
     log_activity(current_user.id, "updated", "Changed account password", "user")
     return jsonify({"success": True})
 
+@app.route('/api/v1/user/appearance', methods=['PUT'])
+@login_required
+def update_appearance():
+    data = request.json or {}
+    if 'theme_preference' in data:
+        current_user.theme_preference = data['theme_preference']
+        db.session.commit()
+    return jsonify({"success": True})
+
+@app.route('/api/v1/user/notifications', methods=['PUT'])
+@login_required
+def update_notifications():
+    data = request.json or {}
+    if 'reminder_notifs' in data: current_user.reminder_notifs = bool(data['reminder_notifs'])
+    if 'task_notifs' in data: current_user.task_notifs = bool(data['task_notifs'])
+    if 'event_notifs' in data: current_user.event_notifs = bool(data['event_notifs'])
+    db.session.commit()
+    log_activity(current_user.id, "updated", "Updated notification preferences", "user")
+    return jsonify({"success": True})
+
+@app.route('/api/v1/user/export')
+@login_required
+def export_user_data():
+    notes = Note.query.filter_by(user_id=current_user.id).all()
+    tasks = Task.query.filter_by(user_id=current_user.id).all()
+    files = File.query.filter_by(user_id=current_user.id).all()
+    projects = Project.query.filter_by(user_id=current_user.id).all()
+    bookmarks = Bookmark.query.filter_by(user_id=current_user.id).all()
+    timetable = TimetableEntry.query.filter_by(user_id=current_user.id).all()
+
+    export_data = {
+        "user": {"email": current_user.email, "full_name": current_user.full_name},
+        "notes": [{"title": n.title, "content": n.content} for n in notes],
+        "tasks": [{"title": t.title, "status": t.status, "priority": t.priority} for t in tasks],
+        "files": [{"file_name": f.file_name, "file_size": f.file_size} for f in files],
+        "projects": [{"name": p.name, "description": p.description} for p in projects],
+        "bookmarks": [{"title": b.title, "url": b.url} for b in bookmarks],
+        "timetable": [{"subject": t.subject, "day": t.day_of_week, "time": t.start_time} for t in timetable]
+    }
+    return jsonify(export_data)
+
+@app.route('/api/v1/user/clear-data', methods=['POST'])
+@login_required
+def clear_workspace_data():
+    # Remove files from disk
+    user_files = File.query.filter_by(user_id=current_user.id).all()
+    for f in user_files:
+        if os.path.exists(f.file_path):
+            try: os.remove(f.file_path)
+            except Exception: pass
+
+    File.query.filter_by(user_id=current_user.id).delete()
+    Note.query.filter_by(user_id=current_user.id).delete()
+    Task.query.filter_by(user_id=current_user.id).delete()
+    Project.query.filter_by(user_id=current_user.id).delete()
+    Bookmark.query.filter_by(user_id=current_user.id).delete()
+    CalendarEvent.query.filter_by(user_id=current_user.id).delete()
+    TimetableEntry.query.filter_by(user_id=current_user.id).delete()
+    Reminder.query.filter_by(user_id=current_user.id).delete()
+    Folder.query.filter_by(user_id=current_user.id).delete()
+    
+    db.session.commit()
+    log_activity(current_user.id, "cleared", "Cleared all workspace data", "workspace")
+    return jsonify({"success": True})
+
 @app.route('/api/v1/user/account', methods=['DELETE'])
 @login_required
 def delete_account():
+    # Delete files from disk
+    user_files = File.query.filter_by(user_id=current_user.id).all()
+    for f in user_files:
+        if os.path.exists(f.file_path):
+            try: os.remove(f.file_path)
+            except Exception: pass
+
     user = User.query.get(current_user.id)
     logout_user()
     db.session.delete(user)
