@@ -865,193 +865,206 @@ function renderRemindersView(container) {
   `;
 }
 
-async function renderSettingsView(container) {
-  try {
-    const res = await fetch('/api/v1/user/settings').then(r => r.json());
-    const prof = res.profile;
-    const appr = res.appearance;
-    const notif = res.notifications;
-    const work = res.workspace;
+function renderSettingsView(container) {
+  container.innerHTML = `
+    <div style="margin-bottom: 24px;">
+      <h2 style="font-family: var(--font-heading); font-weight: 800; font-size: 1.7rem; color: var(--neon-mint);">Settings & Control Center</h2>
+      <p style="color: var(--text-secondary); font-size: 0.9rem;">Manage your account, security, appearance, notifications, and workspace data</p>
+    </div>
 
-    container.innerHTML = `
-      <div style="margin-bottom: 24px;">
-        <h2 style="font-family: var(--font-heading); font-weight: 800; font-size: 1.7rem; color: var(--neon-mint);">Settings & Control Center</h2>
-        <p style="color: var(--text-secondary); font-size: 0.9rem;">Manage your account, security, appearance, notifications, and workspace data</p>
+    <div class="dashboard-grid">
+      <!-- 1. PROFILE -->
+      <div class="col-6">
+        <div class="glass-panel">
+          <h3 style="font-weight: 700; margin-bottom: 16px; color: #FFF; font-family: var(--font-heading);">1. Profile Settings</h3>
+          <form id="profileForm" style="display: flex; flex-direction: column; gap: 14px;">
+            <div>
+              <label style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">EMAIL ADDRESS (READONLY)</label>
+              <input type="email" id="settingEmail" readonly style="width: 100%; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: var(--text-muted); margin-top: 4px;" placeholder="Loading email..." />
+            </div>
+            <div>
+              <label style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">FULL NAME</label>
+              <input type="text" id="settingFullName" required style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: #FFF; margin-top: 4px;" placeholder="Loading name..." />
+            </div>
+            <div>
+              <label style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">MAJOR / FIELD OF STUDY</label>
+              <input type="text" id="settingMajor" required style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: #FFF; margin-top: 4px;" placeholder="Loading major..." />
+            </div>
+            <button type="submit" class="btn-quick-add" style="justify-content: center; width: 100%;">Save Profile Changes</button>
+          </form>
+        </div>
       </div>
 
-      <div class="dashboard-grid">
-        <!-- 1. PROFILE -->
-        <div class="col-6">
-          <div class="glass-panel">
-            <h3 style="font-weight: 700; margin-bottom: 16px; color: #FFF; font-family: var(--font-heading);">1. Profile Settings</h3>
-            <form id="profileForm" style="display: flex; flex-direction: column; gap: 14px;">
-              <div>
-                <label style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">EMAIL ADDRESS (READONLY)</label>
-                <input type="email" value="${prof.email}" readonly style="width: 100%; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: var(--text-muted); margin-top: 4px;" />
-              </div>
-              <div>
-                <label style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">FULL NAME</label>
-                <input type="text" id="settingFullName" value="${prof.full_name}" required style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: #FFF; margin-top: 4px;" />
-              </div>
-              <div>
-                <label style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">MAJOR / FIELD OF STUDY</label>
-                <input type="text" id="settingMajor" value="${prof.major_study}" required style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: #FFF; margin-top: 4px;" />
-              </div>
-              <button type="submit" class="btn-quick-add" style="justify-content: center; width: 100%;">Save Profile Changes</button>
+      <!-- 2. SECURITY -->
+      <div class="col-6">
+        <div class="glass-panel">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="font-weight: 700; color: #FFF; font-family: var(--font-heading);">2. Security & Password</h3>
+            <a href="/logout" class="badge-tag" style="background: rgba(255, 46, 147, 0.15); color: var(--neon-rose); text-decoration: none;">🚪 Logout</a>
+          </div>
+          <form id="passwordForm" style="display: flex; flex-direction: column; gap: 12px;">
+            <div>
+              <label style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">CURRENT PASSWORD</label>
+              <input type="password" id="oldPassword" required style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: #FFF; margin-top: 4px;" />
+            </div>
+            <div>
+              <label style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">NEW PASSWORD</label>
+              <input type="password" id="newPassword" required style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: #FFF; margin-top: 4px;" />
+            </div>
+            <div>
+              <label style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">CONFIRM NEW PASSWORD</label>
+              <input type="password" id="confirmPassword" required style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: #FFF; margin-top: 4px;" />
+            </div>
+            <button type="submit" class="btn-quick-add" style="justify-content: center; width: 100%; background: rgba(0, 210, 255, 0.15); color: var(--neon-cyan); border: 1px solid var(--neon-cyan);">Update Password</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- 3. APPEARANCE & 4. NOTIFICATIONS -->
+      <div class="col-6">
+        <div class="glass-panel" style="display: flex; flex-direction: column; gap: 20px;">
+          <div>
+            <h3 style="font-weight: 700; margin-bottom: 12px; color: #FFF; font-family: var(--font-heading);">3. Theme & Appearance</h3>
+            <form id="appearanceForm" style="display: flex; gap: 12px; align-items: center;">
+              <select id="themeSelect" style="flex: 1; background: var(--bg-surface); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: #FFF;">
+                <option value="cyber-dark">Cyber-Aurora Obsidian (Default)</option>
+                <option value="deep-space">Deep Space Midnight</option>
+              </select>
+              <button type="submit" class="btn-quick-add" style="padding: 10px 16px; font-size: 0.82rem;">Save Theme</button>
+            </form>
+          </div>
+
+          <div style="border-top: 1px solid var(--border-glass); padding-top: 16px;">
+            <h3 style="font-weight: 700; margin-bottom: 12px; color: #FFF; font-family: var(--font-heading);">4. Notification Preferences</h3>
+            <form id="notifForm" style="display: flex; flex-direction: column; gap: 10px;">
+              <label style="display: flex; align-items: center; justify-content: space-between; color: #FFF; font-size: 0.9rem;">
+                <span>🔔 Reminder Notifications</span>
+                <input type="checkbox" id="notifReminders" checked style="width: 18px; height: 18px; accent-color: var(--neon-mint);" />
+              </label>
+              <label style="display: flex; align-items: center; justify-content: space-between; color: #FFF; font-size: 0.9rem;">
+                <span>⏰ Task Deadline Notifications</span>
+                <input type="checkbox" id="notifTasks" checked style="width: 18px; height: 18px; accent-color: var(--neon-mint);" />
+              </label>
+              <label style="display: flex; align-items: center; justify-content: space-between; color: #FFF; font-size: 0.9rem;">
+                <span>🗓️ Calendar Event Notifications</span>
+                <input type="checkbox" id="notifEvents" checked style="width: 18px; height: 18px; accent-color: var(--neon-mint);" />
+              </label>
+              <button type="submit" class="btn-quick-add" style="justify-content: center; width: 100%; margin-top: 8px;">Save Preferences</button>
             </form>
           </div>
         </div>
+      </div>
 
-        <!-- 2. SECURITY -->
-        <div class="col-6">
-          <div class="glass-panel">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-              <h3 style="font-weight: 700; color: #FFF; font-family: var(--font-heading);">2. Security & Password</h3>
-              <a href="/logout" class="badge-tag" style="background: rgba(255, 46, 147, 0.15); color: var(--neon-rose); text-decoration: none;">🚪 Logout</a>
-            </div>
-            <form id="passwordForm" style="display: flex; flex-direction: column; gap: 12px;">
-              <div>
-                <label style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">CURRENT PASSWORD</label>
-                <input type="password" id="oldPassword" required style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: #FFF; margin-top: 4px;" />
-              </div>
-              <div>
-                <label style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">NEW PASSWORD</label>
-                <input type="password" id="newPassword" required style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: #FFF; margin-top: 4px;" />
-              </div>
-              <div>
-                <label style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700; font-family: var(--font-mono);">CONFIRM NEW PASSWORD</label>
-                <input type="password" id="confirmPassword" required style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: #FFF; margin-top: 4px;" />
-              </div>
-              <button type="submit" class="btn-quick-add" style="justify-content: center; width: 100%; background: rgba(0, 210, 255, 0.15); color: var(--neon-cyan); border: 1px solid var(--neon-cyan);">Update Password</button>
-            </form>
-          </div>
-        </div>
-
-        <!-- 3. APPEARANCE & 4. NOTIFICATIONS -->
-        <div class="col-6">
-          <div class="glass-panel" style="display: flex; flex-direction: column; gap: 20px;">
-            <div>
-              <h3 style="font-weight: 700; margin-bottom: 12px; color: #FFF; font-family: var(--font-heading);">3. Theme & Appearance</h3>
-              <form id="appearanceForm" style="display: flex; gap: 12px; align-items: center;">
-                <select id="themeSelect" style="flex: 1; background: var(--bg-surface); border: 1px solid var(--border-glass); padding: 10px; border-radius: var(--radius-sm); color: #FFF;">
-                  <option value="cyber-dark" ${appr.theme_preference === 'cyber-dark' ? 'selected' : ''}>Cyber-Aurora Obsidian (Default)</option>
-                  <option value="deep-space" ${appr.theme_preference === 'deep-space' ? 'selected' : ''}>Deep Space Midnight</option>
-                </select>
-                <button type="submit" class="btn-quick-add" style="padding: 10px 16px; font-size: 0.82rem;">Save Theme</button>
-              </form>
-            </div>
-
-            <div style="border-top: 1px solid var(--border-glass); padding-top: 16px;">
-              <h3 style="font-weight: 700; margin-bottom: 12px; color: #FFF; font-family: var(--font-heading);">4. Notification Preferences</h3>
-              <form id="notifForm" style="display: flex; flex-direction: column; gap: 10px;">
-                <label style="display: flex; align-items: center; justify-content: space-between; color: #FFF; font-size: 0.9rem;">
-                  <span>🔔 Reminder Notifications</span>
-                  <input type="checkbox" id="notifReminders" ${notif.reminder_notifs ? 'checked' : ''} style="width: 18px; height: 18px; accent-color: var(--neon-mint);" />
-                </label>
-                <label style="display: flex; align-items: center; justify-content: space-between; color: #FFF; font-size: 0.9rem;">
-                  <span>⏰ Task Deadline Notifications</span>
-                  <input type="checkbox" id="notifTasks" ${notif.task_notifs ? 'checked' : ''} style="width: 18px; height: 18px; accent-color: var(--neon-mint);" />
-                </label>
-                <label style="display: flex; align-items: center; justify-content: space-between; color: #FFF; font-size: 0.9rem;">
-                  <span>🗓️ Calendar Event Notifications</span>
-                  <input type="checkbox" id="notifEvents" ${notif.event_notifs ? 'checked' : ''} style="width: 18px; height: 18px; accent-color: var(--neon-mint);" />
-                </label>
-                <button type="submit" class="btn-quick-add" style="justify-content: center; width: 100%; margin-top: 8px;">Save Preferences</button>
-              </form>
+      <!-- 5. WORKSPACE STORAGE & 6. DATA PRIVACY -->
+      <div class="col-6">
+        <div class="glass-panel" style="display: flex; flex-direction: column; gap: 20px;">
+          <div>
+            <h3 style="font-weight: 700; margin-bottom: 8px; color: #FFF; font-family: var(--font-heading);">5. Calculated Workspace Storage</h3>
+            <div id="storageMbDisplay" style="font-size: 1.8rem; font-weight: 800; color: var(--neon-mint); font-family: var(--font-heading);">0 MB</div>
+            <div id="storageBreakdown" style="display: flex; gap: 16px; margin-top: 10px; font-size: 0.85rem; color: var(--text-secondary);">
+              <span>📝 0 Notes</span>
+              <span>✅ 0 Tasks</span>
+              <span>🚀 0 Projects</span>
             </div>
           </div>
-        </div>
 
-        <!-- 5. WORKSPACE STORAGE & 6. DATA PRIVACY -->
-        <div class="col-6">
-          <div class="glass-panel" style="display: flex; flex-direction: column; gap: 20px;">
-            <div>
-              <h3 style="font-weight: 700; margin-bottom: 8px; color: #FFF; font-family: var(--font-heading);">5. Calculated Workspace Storage</h3>
-              <div style="font-size: 1.8rem; font-weight: 800; color: var(--neon-mint); font-family: var(--font-heading);">${work.total_mb} MB <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: 400;">(${work.file_count} files)</span></div>
-              <div style="display: flex; gap: 16px; margin-top: 10px; font-size: 0.85rem; color: var(--text-secondary);">
-                <span>📝 ${work.note_count} Notes</span>
-                <span>✅ ${work.task_count} Tasks</span>
-                <span>🚀 ${work.project_count} Projects</span>
-              </div>
-            </div>
-
-            <div style="border-top: 1px solid var(--border-glass); padding-top: 16px;">
-              <h3 style="font-weight: 700; margin-bottom: 12px; color: #FFF; font-family: var(--font-heading);">6. Data & Privacy Control Center</h3>
-              <div style="display: flex; flex-direction: column; gap: 10px;">
-                <button class="btn-quick-add" style="justify-content: center; background: rgba(0, 245, 160, 0.15); color: var(--neon-mint); border: 1px solid var(--neon-mint);" onclick="window.exportWorkspaceData()">📥 Export Workspace Data (JSON)</button>
-                <button class="btn-quick-add" style="justify-content: center; background: rgba(255, 183, 3, 0.15); color: var(--neon-amber); border: 1px solid var(--neon-amber);" onclick="window.clearWorkspaceData()">⚠️ Clear All Workspace Data</button>
-                <button class="btn-quick-add" style="justify-content: center; background: rgba(255, 46, 147, 0.15); color: var(--neon-rose); border: 1px solid var(--neon-rose);" onclick="window.deleteUserAccount()">🛑 Delete Account</button>
-              </div>
+          <div style="border-top: 1px solid var(--border-glass); padding-top: 16px;">
+            <h3 style="font-weight: 700; margin-bottom: 12px; color: #FFF; font-family: var(--font-heading);">6. Data & Privacy Control Center</h3>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <button class="btn-quick-add" style="justify-content: center; background: rgba(0, 245, 160, 0.15); color: var(--neon-mint); border: 1px solid var(--neon-mint);" onclick="window.exportWorkspaceData()">📥 Export Workspace Data (JSON)</button>
+              <button class="btn-quick-add" style="justify-content: center; background: rgba(255, 183, 3, 0.15); color: var(--neon-amber); border: 1px solid var(--neon-amber);" onclick="window.clearWorkspaceData()">⚠️ Clear All Workspace Data</button>
+              <button class="btn-quick-add" style="justify-content: center; background: rgba(255, 46, 147, 0.15); color: var(--neon-rose); border: 1px solid var(--neon-rose);" onclick="window.deleteUserAccount()">🛑 Delete Account</button>
             </div>
           </div>
         </div>
       </div>
-    `;
+    </div>
+  `;
 
-    document.getElementById('profileForm').onsubmit = async (e) => {
-      e.preventDefault();
-      await fetch('/api/v1/user/profile', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ full_name: document.getElementById('settingFullName').value, major_study: document.getElementById('settingMajor').value })
-      });
-      showToast('Profile updated successfully.');
-    };
+  fetch('/api/v1/user/settings').then(r => r.json()).then(res => {
+    if (res.profile) {
+      document.getElementById('settingEmail').value = res.profile.email || '';
+      document.getElementById('settingFullName').value = res.profile.full_name || '';
+      document.getElementById('settingMajor').value = res.profile.major_study || '';
+    }
+    if (res.appearance) {
+      document.getElementById('themeSelect').value = res.appearance.theme_preference || 'cyber-dark';
+    }
+    if (res.notifications) {
+      document.getElementById('notifReminders').checked = !!res.notifications.reminder_notifs;
+      document.getElementById('notifTasks').checked = !!res.notifications.task_notifs;
+      document.getElementById('notifEvents').checked = !!res.notifications.event_notifs;
+    }
+    if (res.workspace) {
+      document.getElementById('storageMbDisplay').innerHTML = `${res.workspace.total_mb} MB <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: 400;">(${res.workspace.file_count} files)</span>`;
+      document.getElementById('storageBreakdown').innerHTML = `
+        <span>📝 ${res.workspace.note_count} Notes</span>
+        <span>✅ ${res.workspace.task_count} Tasks</span>
+        <span>🚀 ${res.workspace.project_count} Projects</span>
+      `;
+    }
+  }).catch(err => console.error(err));
 
-    document.getElementById('passwordForm').onsubmit = async (e) => {
-      e.preventDefault();
-      const oldPw = document.getElementById('oldPassword').value;
-      const newPw = document.getElementById('newPassword').value;
-      const confirmPw = document.getElementById('confirmPassword').value;
+  document.getElementById('profileForm').onsubmit = async (e) => {
+    e.preventDefault();
+    await fetch('/api/v1/user/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ full_name: document.getElementById('settingFullName').value, major_study: document.getElementById('settingMajor').value })
+    });
+    showToast('Profile updated successfully.');
+  };
 
-      if (newPw !== confirmPw) {
-        alert('New password and confirmation do not match.');
-        return;
-      }
+  document.getElementById('passwordForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const oldPw = document.getElementById('oldPassword').value;
+    const newPw = document.getElementById('newPassword').value;
+    const confirmPw = document.getElementById('confirmPassword').value;
 
-      const res = await fetch('/api/v1/user/password', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ old_password: oldPw, new_password: newPw, confirm_password: confirmPw })
-      });
-      if (res.ok) {
-        showToast('Password updated successfully.');
-        document.getElementById('oldPassword').value = '';
-        document.getElementById('newPassword').value = '';
-        document.getElementById('confirmPassword').value = '';
-      } else {
-        const err = await res.json();
-        alert(err.error || 'Password update failed.');
-      }
-    };
+    if (newPw !== confirmPw) {
+      alert('New password and confirmation do not match.');
+      return;
+    }
 
-    document.getElementById('appearanceForm').onsubmit = async (e) => {
-      e.preventDefault();
-      await fetch('/api/v1/user/appearance', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme_preference: document.getElementById('themeSelect').value })
-      });
-      showToast('Theme preference saved.');
-    };
+    const res = await fetch('/api/v1/user/password', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ old_password: oldPw, new_password: newPw, confirm_password: confirmPw })
+    });
+    if (res.ok) {
+      showToast('Password updated successfully.');
+      document.getElementById('oldPassword').value = '';
+      document.getElementById('newPassword').value = '';
+      document.getElementById('confirmPassword').value = '';
+    } else {
+      const err = await res.json();
+      alert(err.error || 'Password update failed.');
+    }
+  };
 
-    document.getElementById('notifForm').onsubmit = async (e) => {
-      e.preventDefault();
-      await fetch('/api/v1/user/notifications', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reminder_notifs: document.getElementById('notifReminders').checked,
-          task_notifs: document.getElementById('notifTasks').checked,
-          event_notifs: document.getElementById('notifEvents').checked
-        })
-      });
-      showToast('Notification preferences saved.');
-    };
+  document.getElementById('appearanceForm').onsubmit = async (e) => {
+    e.preventDefault();
+    await fetch('/api/v1/user/appearance', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme_preference: document.getElementById('themeSelect').value })
+    });
+    showToast('Theme preference saved.');
+  };
 
-  } catch (err) {
-    console.error(err);
-  }
+  document.getElementById('notifForm').onsubmit = async (e) => {
+    e.preventDefault();
+    await fetch('/api/v1/user/notifications', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reminder_notifs: document.getElementById('notifReminders').checked,
+        task_notifs: document.getElementById('notifTasks').checked,
+        event_notifs: document.getElementById('notifEvents').checked
+      })
+    });
+    showToast('Notification preferences saved.');
+  };
 }
 
 async function exportWorkspaceData() {
