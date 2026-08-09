@@ -13,7 +13,7 @@ const navItems = [
   { id: 'settings', label: 'Settings', icon: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>' }
 ];
 
-let activeView = 'dashboard';
+let activeView = window.INITIAL_VIEW || 'dashboard';
 let currentFolderId = null; // null = root
 let selectedNoteId = null;
 let taskViewMode = 'kanban'; // kanban or list
@@ -868,7 +868,7 @@ function renderRemindersView(container) {
 function renderSettingsView(container) {
   container.innerHTML = `
     <div style="margin-bottom: 24px;">
-      <h2 style="font-family: var(--font-heading); font-weight: 800; font-size: 1.7rem; color: var(--neon-mint);">Settings & Control Center</h2>
+      <h2 style="font-family: var(--font-heading); font-weight: 800; font-size: 1.7rem; color: var(--neon-mint);">Workspace Settings — TEST</h2>
       <p style="color: var(--text-secondary); font-size: 0.9rem;">Manage your account, security, appearance, notifications, and workspace data</p>
     </div>
 
@@ -1478,7 +1478,7 @@ window.addEventListener('DOMContentLoaded', () => {
   window.setTaskViewMode = setTaskViewMode;
   window.setDriveSort = setDriveSort;
   renderSidebarNav();
-  switchView('dashboard');
+  switchView(activeView);
   setupQuickAddModal();
   setupGlobalSearch();
   initAmbientCanvas();
