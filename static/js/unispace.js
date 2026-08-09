@@ -868,7 +868,7 @@ function renderRemindersView(container) {
 function renderSettingsView(container) {
   container.innerHTML = `
     <div style="margin-bottom: 24px;">
-      <h2 style="font-family: var(--font-heading); font-weight: 800; font-size: 1.7rem; color: var(--neon-mint);">Workspace Settings — TEST</h2>
+      <h2 style="font-family: var(--font-heading); font-weight: 800; font-size: 1.7rem; color: var(--neon-mint);">Workspace Settings</h2>
       <p style="color: var(--text-secondary); font-size: 0.9rem;">Manage your account, security, appearance, notifications, and workspace data</p>
     </div>
 
