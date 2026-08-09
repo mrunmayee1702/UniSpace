@@ -1,0 +1,30 @@
+# Python / Flask
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv
+
+# Environment variables
+.env
+
+# SQLite local database
+*.db
+unispace.db
+instance/
+
+# Local file uploads
+uploads/*
+!uploads/.gitkeep
+
+# IDEs & OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

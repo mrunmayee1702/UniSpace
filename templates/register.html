@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block auth_content %}
+<div class="glass-panel" style="width: 100%; max-width: 440px; padding: 36px;">
+  <div style="text-align: center; margin-bottom: 28px;">
+    <div class="brand-icon" style="margin: 0 auto 16px auto; width: 48px; height: 48px;">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+      </svg>
+    </div>
+    <h2 style="font-size: 1.6rem; font-weight: 800; margin-bottom: 6px;">Create UniSpace Account</h2>
+    <p style="color: var(--text-muted); font-size: 0.9rem;">Your personal digital workspace</p>
+  </div>
+
+  {% if get_flashed_messages() %}
+    {% for msg in get_flashed_messages() %}
+      <div style="padding: 10px 14px; background: rgba(244, 63, 94, 0.15); border: 1px solid rgba(244, 63, 94, 0.3); border-radius: 8px; color: var(--accent-rose); font-size: 0.85rem; margin-bottom: 18px;">
+        {{ msg }}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <form method="POST" action="/register" style="display: flex; flex-direction: column; gap: 14px;">
+    <div>
+      <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 6px;">Full Name</label>
+      <input type="text" name="full_name" required placeholder="Alex Rivera" style="width: 100%; padding: 12px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 8px; color: #FFF; outline: none;" />
+    </div>
+
+    <div>
+      <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 6px;">Email Address</label>
+      <input type="email" name="email" required placeholder="alex@university.edu" style="width: 100%; padding: 12px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 8px; color: #FFF; outline: none;" />
+    </div>
+
+    <div>
+      <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 6px;">Major / Area of Study</label>
+      <input type="text" name="major_study" placeholder="Computer Science & AI" style="width: 100%; padding: 12px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 8px; color: #FFF; outline: none;" />
+    </div>
+
+    <div>
+      <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 6px;">Password</label>
+      <input type="password" name="password" required placeholder="••••••••" style="width: 100%; padding: 12px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 8px; color: #FFF; outline: none;" />
+    </div>
+
+    <button type="submit" class="btn-quick-add" style="width: 100%; justify-content: center; padding: 12px; margin-top: 8px;">Register Account</button>
+  </form>
+
+  <p style="text-align: center; margin-top: 24px; font-size: 0.85rem; color: var(--text-muted);">
+    Already have an account? <a href="/login" style="color: var(--accent-violet); text-decoration: none; font-weight: 600;">Sign In</a>
+  </p>
+</div>
+{% endblock %}
